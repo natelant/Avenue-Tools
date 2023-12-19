@@ -1,0 +1,8 @@
+# ignore my data folders
+Data/
+analyze/
+data_dump/
+TravelTimesData/
+
+#ignore .xlsx extension
+*.xlsx
