@@ -24,7 +24,7 @@ def print_ascii_art():
     for line in Fire:
         print(line)
 
-def calculate_average_travel_time(folder_path, start_time, stop_time):
+def calculate_average_travel_time(folder_path, start_time, stop_time, output_file):
     # Read all CSV files from the specified folder
     files = [file for file in os.listdir(folder_path) if file.endswith('.csv')]
     
@@ -74,7 +74,7 @@ def calculate_average_travel_time(folder_path, start_time, stop_time):
     )
 
     # Create an Excel writer
-    excel_writer = pd.ExcelWriter('output.xlsx', engine='xlsxwriter')
+    excel_writer = pd.ExcelWriter(output_file, engine='xlsxwriter')
 
     # Write the filtered data to Sheet 1
     combined_data.to_excel(excel_writer, sheet_name='Sheet1', index=False)
@@ -85,8 +85,10 @@ def calculate_average_travel_time(folder_path, start_time, stop_time):
     # Save and close the Excel writer
     excel_writer.close()
 
-    print("The travel times have been calculated, grouped by Clearguide routes, and saved as 'output.xlsx'.")
-    os.system('start excel output.xlsx')  # Open the Excel file
+    # Assuming 'output_file' is the variable holding the desired file name
+    print(f"The travel times have been calculated, grouped by Clearguide routes, and saved as '{output_file}'.")
+    os.system(f'start excel {output_file}')  # Open the Excel file
+
 
 if __name__ == "__main__":
     # Call the function to print the ASCII art
@@ -121,5 +123,8 @@ if __name__ == "__main__":
         implementation_date_str = input("Enter the implementation date (MM/DD/YYYY): ")
         filter_date = pd.to_datetime(implementation_date_str, format="%m/%d/%Y")
 
+        # Prompt the user to enter the file path of output file
+        output_file = input("Enter the file name of output file (.xlsx): ").strip()
+
         # Call the function to merge and analyze the data
-        calculate_average_travel_time(folder_path, start_time, stop_time)
+        calculate_average_travel_time(folder_path, start_time, stop_time, output_file)
