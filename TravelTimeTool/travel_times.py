@@ -57,13 +57,20 @@ def calculate_average_travel_time(folder_path, start_time, stop_time, output_fil
 
     # Extract the time component and create a new column 'hour'
     data_index['hour'] = data_index.index.hour
-    print(data_index)
 
     # Calculate the hourly average travel time for each hour of the day on each route (source_file)
     hourly_avg_travel_time = data_index.groupby(['source_file', 'hour'])['avg_travel_time'].mean().rename('hourly_average')
+    print(data_index)
+    print(data_index.index)
+    print("Number of Levels:", data_index.index.nlevels)
+    print('---------------------------')
+    print(hourly_avg_travel_time)
+    print(hourly_avg_travel_time.index)
+    print("Number of levels:", hourly_avg_travel_time.index.nlevels)
+
 
     # Merge the hourly averages back to the original DataFrame
-    data_index = data_index.merge(hourly_avg_travel_time, left_on='hour', right_index=True, suffixes=('', '_hourly'))
+    data_index = data_index.merge(hourly_avg_travel_time, left_on='hour', right_on='hour', suffixes=('', '_hourly'))
 
     # Calculate the z-score for each travel time based on the average for its respective hour
     data_index['z_score'] = (data_index['avg_travel_time'] - data_index['hourly_average']) / data_index['hourly_average'].std()
@@ -104,13 +111,13 @@ def calculate_average_travel_time(folder_path, start_time, stop_time, output_fil
     excel_writer = pd.ExcelWriter(output_file, engine='xlsxwriter')
 
     # Write the filtered data to Sheet 1
-    combined_data.to_excel(excel_writer, sheet_name='Sheet1', index=False)
+    combined_data.to_excel(excel_writer, sheet_name='Raw Data', index=False)
 
     # Write the summary table to Sheet 2
-    summary_table.to_excel(excel_writer, sheet_name='Sheet2', index=False)
+    summary_table.to_excel(excel_writer, sheet_name='Summary Table', index=False)
 
     # Write the outliers to Sheet 3
-    outliers.to_excel(excel_writer, sheet_name='Sheet3', index=False)
+    outliers.to_excel(excel_writer, sheet_name='Outliers', index=False)
 
     # Save and close the Excel writer
     excel_writer.close()
@@ -158,4 +165,4 @@ if __name__ == "__main__":
         output_file = input("Enter the file name of output file (.xlsx): ").strip()
 
         # Call the function to merge and analyze the data
-        calculate_average_travel_time(folder_path, start_time, stop_time, output_file)
+        calculate_average_travel_time(folder_path, start_time, stop_time, output_file) # note the function does not include filter date
