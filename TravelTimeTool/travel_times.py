@@ -41,27 +41,35 @@ def calculate_average_travel_time(folder_path, start_time, stop_time, output_fil
     for file in files:
         file_path = os.path.join(folder_path, file)
         df = pd.read_csv(file_path)
-        # Add a new column with the source filename
+        # Add a new column with the source filename. This represents the route the data is coming from
         df['source_file'] = file
         dfs.append(df)
 
         combined_data = pd.concat(dfs, ignore_index=True)
         combined_data['local_datetime'] = pd.to_datetime(combined_data['local_datetime'])
 
+        # Filters all data before the start date or skips this step if the answer was NO
+        if start_date.lower() not in ["no", "n"]:
+            # Filter combined_data based on the condition
+            clean_data = combined_data[combined_data['local_datetime'] >= start_date]
+        else:
+            # If start_date is "no", assign clean_data to combined_data
+            clean_data = combined_data
+
     # Create a new column 'before_after' based on the input implementation date
-    combined_data['before_after'] = np.where(pd.to_datetime(combined_data['local_datetime']) < filter_date, 'before', 'after')
+    clean_data['before_after'] = np.where(pd.to_datetime(clean_data['local_datetime']) < filter_date, 'before', 'after')
 
     # Outlier Analysis -----------------------------------
     # create an hour variable to compare travel times within the hour to an hourly average
-    combined_data['hour'] = combined_data['local_datetime'].dt.hour
+    clean_data['hour'] = clean_data['local_datetime'].dt.hour
 
     # Calculate the hourly average travel time for each hour of the day on each route (source_file)
-    hourly_avg_travel_time = combined_data.groupby(['before_after', 'source_file', 'hour'])['avg_travel_time'].mean().reset_index().rename(columns={'avg_travel_time': 'hourly_average'})
+    hourly_avg_travel_time = clean_data.groupby(['before_after', 'source_file', 'hour'])['avg_travel_time'].mean().reset_index().rename(columns={'avg_travel_time': 'hourly_average'})
 
 
 
     # Merge the hourly averages back to the original DataFrame
-    merged_data = combined_data.merge(hourly_avg_travel_time, on=['before_after', 'source_file', 'hour'], suffixes=('', '_hourly'))
+    merged_data = clean_data.merge(hourly_avg_travel_time, on=['before_after', 'source_file', 'hour'], suffixes=('', '_hourly'))
 
 
     # Calculate the z-score for each travel time based on the average for its respective hour
@@ -93,6 +101,8 @@ def calculate_average_travel_time(folder_path, start_time, stop_time, output_fil
     if 'before' in summary_table.columns and 'after' in summary_table.columns:
         # Reorder the columns if both 'before' and 'after' exist
         summary_table = summary_table[['source_file', 'before', 'after']]
+        # add the difference column
+        summary_table['Difference (min)'] = summary_table['after'] - summary_table['before']
     elif 'before' in summary_table.columns:
         # Reorder the columns if only 'before' exists
         summary_table = summary_table[['source_file', 'before']]
@@ -101,12 +111,6 @@ def calculate_average_travel_time(folder_path, start_time, stop_time, output_fil
         summary_table = summary_table[['source_file', 'after']]
 
     # # Create an Excel writer
-    # excel_writer = pd.ExcelWriter(output_file, engine='xlsxwriter')
-
-    # # Write the total data to Sheet 1
-    # merged_data.to_excel(excel_writer, sheet_name='Raw Data', index=False)
-
-    # Code to write 'Raw Data' sheet
     with pd.ExcelWriter(output_file, engine='xlsxwriter') as writer:
         # Write the first 1048576 rows of merged_data to 'Raw Data' sheet
         merged_data.iloc[:100000].to_excel(writer, sheet_name='Raw Data', index=False)
@@ -114,7 +118,7 @@ def calculate_average_travel_time(folder_path, start_time, stop_time, output_fil
         # Check if there is overflow data
         if len(merged_data) > 1000000:
             # Get the overflow data
-            overflow_data = merged_data.iloc[1000000:, :]
+            overflow_data = merged_data.iloc[1000000:, :].copy()
 
             # Write overflow data to 'Overflow Data' sheet
             overflow_data.to_excel(writer, sheet_name='Overflow Data', index=False)
@@ -126,12 +130,16 @@ def calculate_average_travel_time(folder_path, start_time, stop_time, output_fil
         # Write the outliers to Sheet 3
         outliers.to_excel(writer, sheet_name='Outliers', index=False)
 
-        # Save and close the Excel writer
-        writer.close()
-
     # Assuming 'output_file' is the variable holding the desired file name
+    print("------------------------------------------------------------")
+    earliest_date = clean_data['local_datetime'].min()
+    latest_date = clean_data['local_datetime'].max()
     print(f"The travel times have been calculated, grouped by Clearguide routes, and saved as '{output_file}'.")
-    os.system(f'start excel {output_file}')  # Open the Excel file
+    print(f"The travel time analysis considered data from '{earliest_date}' to '{latest_date}'.")
+    print(f"There were '{len(outliers)}' outliers removed from the analysis based on a z-score threshold of '{outlier_threshold}'.")
+
+    # Open the Excel file
+    os.system(f'start excel {output_file}')  
 
 
 if __name__ == "__main__":
@@ -167,6 +175,9 @@ if __name__ == "__main__":
         # Prompt the user to enter the date to split the data
         implementation_date_str = input("Enter the implementation date (MM/DD/YYYY): ")
         filter_date = pd.to_datetime(implementation_date_str, format="%m/%d/%Y")
+
+        # is there a date where any data beforehand can be ignored? Just looking at a few weeks at a time or something
+        start_date = input("Is there a start date? (MM/DD/YYYY or 'No'): ")
 
         # Prompt the user to enter the file path of output file
         output_file = input("Enter the file name of output file (.xlsx): ").strip()
