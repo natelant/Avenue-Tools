@@ -100,20 +100,34 @@ def calculate_average_travel_time(folder_path, start_time, stop_time, output_fil
         # Reorder the columns if only 'after' exists
         summary_table = summary_table[['source_file', 'after']]
 
-    # Create an Excel writer
-    excel_writer = pd.ExcelWriter(output_file, engine='xlsxwriter')
+    # # Create an Excel writer
+    # excel_writer = pd.ExcelWriter(output_file, engine='xlsxwriter')
 
-    # Write the filtered data to Sheet 1
-    combined_data.to_excel(excel_writer, sheet_name='Raw Data', index=False)
+    # # Write the total data to Sheet 1
+    # merged_data.to_excel(excel_writer, sheet_name='Raw Data', index=False)
 
-    # Write the summary table to Sheet 2
-    summary_table.to_excel(excel_writer, sheet_name='Summary Table', index=False)
+    # Code to write 'Raw Data' sheet
+    with pd.ExcelWriter(output_file, engine='xlsxwriter') as writer:
+        # Write the first 1048576 rows of merged_data to 'Raw Data' sheet
+        merged_data.iloc[:100000].to_excel(writer, sheet_name='Raw Data', index=False)
 
-    # Write the outliers to Sheet 3
-    outliers.to_excel(excel_writer, sheet_name='Outliers', index=False)
+        # Check if there is overflow data
+        if len(merged_data) > 1000000:
+            # Get the overflow data
+            overflow_data = merged_data.iloc[1000000:, :]
 
-    # Save and close the Excel writer
-    excel_writer.close()
+            # Write overflow data to 'Overflow Data' sheet
+            overflow_data.to_excel(writer, sheet_name='Overflow Data', index=False)
+
+
+        # Write the summary table to Sheet 2
+        summary_table.to_excel(writer, sheet_name='Summary Table', index=False)
+
+        # Write the outliers to Sheet 3
+        outliers.to_excel(writer, sheet_name='Outliers', index=False)
+
+        # Save and close the Excel writer
+        writer.close()
 
     # Assuming 'output_file' is the variable holding the desired file name
     print(f"The travel times have been calculated, grouped by Clearguide routes, and saved as '{output_file}'.")
