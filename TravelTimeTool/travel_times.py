@@ -52,36 +52,29 @@ def calculate_average_travel_time(folder_path, start_time, stop_time, output_fil
     combined_data['before_after'] = np.where(pd.to_datetime(combined_data['local_datetime']) < filter_date, 'before', 'after')
 
     # Outlier Analysis -----------------------------------
-    # set time variable to index for time series calculations
-    data_index = combined_data.set_index('local_datetime')
-
-    # Extract the time component and create a new column 'hour'
-    data_index['hour'] = data_index.index.hour
+    # create an hour variable to compare travel times within the hour to an hourly average
+    combined_data['hour'] = combined_data['local_datetime'].dt.hour
 
     # Calculate the hourly average travel time for each hour of the day on each route (source_file)
-    hourly_avg_travel_time = data_index.groupby(['source_file', 'hour'])['avg_travel_time'].mean().rename('hourly_average')
-    print(data_index)
-    print(data_index.index)
-    print("Number of Levels:", data_index.index.nlevels)
-    print('---------------------------')
-    print(hourly_avg_travel_time)
-    print(hourly_avg_travel_time.index)
-    print("Number of levels:", hourly_avg_travel_time.index.nlevels)
+    hourly_avg_travel_time = combined_data.groupby(['before_after', 'source_file', 'hour'])['avg_travel_time'].mean().reset_index().rename(columns={'avg_travel_time': 'hourly_average'})
+
 
 
     # Merge the hourly averages back to the original DataFrame
-    data_index = data_index.merge(hourly_avg_travel_time, left_on='hour', right_on='hour', suffixes=('', '_hourly'))
+    merged_data = combined_data.merge(hourly_avg_travel_time, on=['before_after', 'source_file', 'hour'], suffixes=('', '_hourly'))
+
 
     # Calculate the z-score for each travel time based on the average for its respective hour
-    data_index['z_score'] = (data_index['avg_travel_time'] - data_index['hourly_average']) / data_index['hourly_average'].std()
-
+    merged_data['z_score'] = (merged_data['avg_travel_time'] - merged_data['hourly_average']) / merged_data['hourly_average'].std()
     # Set a threshold for outliers (e.g., z-score greater than 3 or less than -3)
     outlier_threshold = 3
-    outliers = data_index[(data_index['z_score'] > outlier_threshold) | (data_index['z_score'] < -outlier_threshold)]
+    outliers = merged_data[abs(merged_data['z_score']) > outlier_threshold]
 
     # Filter data based on peak hour range and remove outliers
-    peak_hour_mask = (combined_data['local_datetime'].dt.time >= start_time) & (combined_data['local_datetime'].dt.time <= stop_time)
-    filtered_data = combined_data[peak_hour_mask & ~combined_data['local_datetime'].isin(outliers.index)]
+    peak_hour_data = merged_data[(merged_data.local_datetime.dt.time >= start_time)&(merged_data.local_datetime.dt.time <= stop_time)]
+    filtered_data = peak_hour_data[peak_hour_data.z_score < outlier_threshold]
+
+
 
     # Calculate Travel Times ---------------------------------
     # Create summary table to compare before and after travel times, excluding the outliers
