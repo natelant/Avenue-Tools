@@ -102,7 +102,7 @@ def calculate_average_travel_time(folder_path, start_time, stop_time, output_fil
         # Reorder the columns if both 'before' and 'after' exist
         summary_table = summary_table[['source_file', 'before', 'after']]
         # add the difference column
-        summary_table['Difference (min)'] = summary_table['after'] - summary_table['before']
+        summary_table['Difference (sec)'] = (summary_table['after'] - summary_table['before']) * 60
     elif 'before' in summary_table.columns:
         # Reorder the columns if only 'before' exists
         summary_table = summary_table[['source_file', 'before']]
