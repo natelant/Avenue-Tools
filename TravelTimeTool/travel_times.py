@@ -143,8 +143,10 @@ def calculate_average_travel_time(folder_path, start_time, stop_time, output_fil
 
 
 if __name__ == "__main__":
-    # Call the function to print the ASCII art
-    print_ascii_art()
+    # Call the function to print the ASCII art 
+
+    # print_ascii_art()
+    
     # Explain the tool
     print(
         "Avenue Tools helps you get work done faster.",
