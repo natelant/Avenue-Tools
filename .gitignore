@@ -4,6 +4,7 @@ analyze/
 data_dump/
 TravelTimesData/
 samples/
+output/
 
 #ignore .xlsx extension
 *.xlsx
