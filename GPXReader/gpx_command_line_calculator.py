@@ -71,7 +71,7 @@ def parse_gpx_file(gpx_file, intersections):
                 # Calculate travel time between the previous intersection and the current closest intersection
                 travel_time = calculate_travel_time(prev_intersection['time'], point['time'])
                 # Store the segment start, segment finish, and travel time in the output data
-                output_data.append({'route_ID': prev_intersection['route_id'] + ' / ' + closest_intersection['route_id'],'segment_start': prev_intersection['segment_id'], 'segment_finish': closest_intersection['segment_id'], 'travel_time': travel_time})
+                output_data.append({'route_ID': prev_intersection['route_id'] + ' / ' + closest_intersection['route_id'], 'segment_start': prev_intersection['segment_id'], 'segment_finish': closest_intersection['segment_id'], 'travel_time': travel_time})
             prev_intersection = closest_intersection
 
     # Convert output data to DataFrame
@@ -79,44 +79,59 @@ def parse_gpx_file(gpx_file, intersections):
     return output_df
 
 
-# Parse CSV file to extract significant intersection information
-csv_file = 'GPXReader/data/routes.csv'
-intersections = parse_csv(csv_file)
+def main():
+    # Branding and instructions:
 
-# Iterate over each GPX file
-folder_path = 'GPXReader/data/'
-all_results = []
-for filename in os.listdir(folder_path):
-    if filename.endswith('.gpx'):  # Check if the file is a GPX file
-        gpx_file = os.path.join(folder_path, filename)
-        # Parse GPX file and calculate travel times
-        result = parse_gpx_file(gpx_file, intersections)
-        result['route'] = os.path.splitext(filename)[0]  # Extract route name from filename
-        all_results.append(result)
+    
+    # Prompt the user to input file paths
+    csv_file = input("Enter the file path to the significant intersections CSV file: ")
+    folder_path = input("Enter the folder path to the GPX files: ")
+    output_file = input("Enter the name of the output file (i.e. output/AM_before.csv): ")
 
-# Concatenate all results together
-final_result = pd.concat(all_results, ignore_index=True)
+    # Parse CSV file to extract significant intersection information
+    intersections = parse_csv(csv_file)
 
-# Format into table
-# Step 1: Filter out rows where segment_start equals segment_finish
-filtered_df = final_result[final_result['segment_start'] != final_result['segment_finish']]
-# Add a new column indicating the order of occurrence for each combination
-filtered_df['route'] = filtered_df['segment_start'] + '_to_' + filtered_df['segment_finish']
-filtered_df['run_number'] = filtered_df.groupby('route').cumcount() + 1
+    # Iterate over each GPX file
+    all_results = []
+    for filename in os.listdir(folder_path):
+        if filename.endswith('.gpx'):  # Check if the file is a GPX file
+            gpx_file = os.path.join(folder_path, filename)
+            # Parse GPX file and calculate travel times
+            result = parse_gpx_file(gpx_file, intersections)
+            result['route'] = os.path.splitext(filename)[0]  # Extract route name from filename
+            all_results.append(result)
 
-# Pivot the table based on the new column 'run_number'
-pivoted_df = filtered_df.pivot_table(index=['route_ID', 'route'], columns='run_number', values='travel_time', aggfunc='first')
+    # Concatenate all results together
+    final_result = pd.concat(all_results, ignore_index=True)
 
-# Calculate the average travel time across runs
-# Get the maximum run number
-max_run_number = pivoted_df.columns.max()
+    # Format into table
+    # Step 1: Filter out rows where segment_start equals segment_finish
+    filtered_df = final_result[final_result['segment_start'] != final_result['segment_finish']]
+    # Add a new column indicating the order of occurrence for each combination
+    filtered_df.loc[:,'route'] = filtered_df['segment_start'] + '_to_' + filtered_df['segment_finish']
+    filtered_df['run_number'] = filtered_df.groupby('route').cumcount() + 1
 
-# Calculate the average travel time across runs
-pivoted_df['average'] = pivoted_df.iloc[:, 1:max_run_number + 1].mean(axis=1)
+    # Pivot the table based on the new column 'run_number'
+    pivoted_df = filtered_df.pivot_table(index=['route_ID', 'route'], columns='run_number', values='travel_time', aggfunc='first')
+
+    # Get the maximum run number
+    max_run_number = pivoted_df.columns.max()
+
+    # Calculate the average travel time across runs
+    pivoted_df['average'] = pivoted_df.iloc[:, 1:max_run_number + 1].mean(axis=1)
 
 
-# Calculate the standard deviation of travel times across runs
-pivoted_df['std_deviation'] = pivoted_df.iloc[:, 1:max_run_number + 1].std(axis=1)
+    # Calculate the standard deviation of travel times across runs
+    pivoted_df['std_deviation'] = pivoted_df.iloc[:, 1:max_run_number + 1].std(axis=1)
 
-# Output the total table of all calculated travel times
-print(pivoted_df)
+    # Output the total table of all calculated travel times
+    print(pivoted_df)
+
+    # Write the output table to a CSV file
+    
+    pivoted_df.to_csv(output_file)
+    print(f"Output table has been written to {output_file}")
+
+
+if __name__ == "__main__":
+    main()
