@@ -3,6 +3,7 @@ import math
 import pandas as pd
 from datetime import datetime
 import gpxpy
+import os
 
 # Function to calculate distance between two points using Haversine formula
 def haversine(lat1, lon1, lat2, lon2):
@@ -36,23 +37,33 @@ def calculate_travel_time(start_time, end_time):
     return (end_datetime - start_datetime).total_seconds()
 
 # Parse GPX file
-# Assume gpx_data is a list of dictionaries where each dictionary represents a point with keys 'lat', 'lon', and 'time'
-# Parse GPX file
-gpx_file = open('GPXReader/data/2100_NL.gpx', 'r')
-gpx = gpxpy.parse(gpx_file)
 
-# Extract data from GPX
-gpx_data = []
-for track in gpx.tracks:
-    for segment in track.segments:
-        for point in segment.points:
-            gpx_data.append({'lat': point.latitude, 'lon': point.longitude, 'time': point.time.strftime('%Y-%m-%dT%H:%M:%SZ')})
 
-gpx_file.close()
+# Function to parse GPX files in a folder
+def parse_gpx_files(folder_path):
+    gpx_data = []
+    # Iterate over each file in the folder
+    for filename in os.listdir(folder_path):
+        if filename.endswith('.gpx'):  # Check if the file is a GPX file
+            file_path = os.path.join(folder_path, filename)
+            # Parse the GPX file
+            with open(file_path, 'r') as gpx_file:
+                gpx = gpxpy.parse(gpx_file)
+                # Extract data from GPX
+                for track in gpx.tracks:
+                    for segment in track.segments:
+                        for point in segment.points:
+                            gpx_data.append({'lat': point.latitude, 'lon': point.longitude, 'time': point.time.strftime('%Y-%m-%dT%H:%M:%SZ')})
+    return gpx_data
+
+# Example usage
+folder_path = 'GPXReader/data/'
+gpx_data = parse_gpx_files(folder_path)
+
 
 # Parse CSV file containing significant intersections
 intersections = []
-with open('GPXReader/data/routes2100.csv', 'r') as csvfile:
+with open('GPXReader/data/routes.csv', 'r') as csvfile:
     reader = csv.DictReader(csvfile)
     for row in reader:
         intersections.append({'route_id': row['routeID'], 'segment_id': row['segmentID'], 'lat': float(row['x']), 'lon': float(row['y'])})
@@ -93,5 +104,26 @@ output_df = pd.DataFrame(output_data)
 
 print(output_df)
 
+# Format into table
+# Step 1: Filter out rows where segment_start equals segment_finish
+filtered_df = output_df[output_df['segment_start'] != output_df['segment_finish']]
+# Add a new column indicating the order of occurrence for each combination
+filtered_df['route'] = filtered_df['segment_start'] + '_to_' + filtered_df['segment_finish']
+filtered_df['run_number'] = filtered_df.groupby('route').cumcount() + 1
+
+# Pivot the table based on the new column 'run_number'
+pivoted_df = filtered_df.pivot_table(index='route', columns='run_number', values='travel_time', aggfunc='first')
+
+# Calculate the average travel time across runs
+pivoted_df['average'] = pivoted_df[[1, 2, 3, 4, 5]].mean(axis=1)
+
+# Calculate the standard deviation of travel times across runs
+pivoted_df['std_deviation'] = pivoted_df[[1, 2, 3, 4, 5]].std(axis=1)
+
+
+print(pivoted_df)
+
 # Save output DataFrame to CSV
-output_df.to_csv('GPXReader/output/travel_times_testing.csv', index=False)
+# output_df.to_csv('GPXReader/output/travel_times_testing.csv', index=False)
+
+
