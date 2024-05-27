@@ -12,6 +12,7 @@ import pandas as pd
 from datetime import datetime
 from fastkml import kml
 import zipfile
+import sys 
 
 # Function to parse CSV file containing significant intersection information
 def parse_csv(csv_file):
@@ -144,9 +145,31 @@ def main():
 
     
     # Prompt the user to input file paths
-    intersection_file = "GPXReader/data/Signal Map.kmz" # input("Enter the file path to the significant intersections CSV or KML file: ") 
-    folder_path = "GPXReader/data" #input("Enter the folder path to the GPX files: ")
-    output_file = "GPXReader/output/memorialday_kmz_tests1.csv" #input("Enter the name of the output CSV file (i.e. output/AM_before.csv): ")
+    intersection_file = input("Enter the file path to the significant intersections CSV or KML file: ") 
+    # Check if the intersection file exists---------------------------
+    if not os.path.exists(intersection_file):
+        print("Intersection file path doesn't exist.")
+        sys.exit()
+    else:
+        # Continue with your code
+        pass
+
+
+    folder_path = input("Enter the folder path to the GPX files: ")
+    # Check if the folder path exists -----------------------
+    if not os.path.exists(folder_path):
+        print("GPX folder path doesn't exist.")
+        sys.exit()
+    else:
+        # Continue with your code
+        pass
+
+
+    output_file = input("Enter the name of the output CSV file (i.e. output/AM_before.csv): ")
+
+    
+
+    
 
     # Determine if file path to significant intersections is CSV or KML
     file_extension = os.path.splitext(intersection_file)[1].lower()
