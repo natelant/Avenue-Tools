@@ -15,6 +15,7 @@ import mplcursors
 import plotly.express as px
 import plotly.graph_objects as go
 import pytz
+import folium
 
 # Define Salt Lake City's timezone
 LOCAL_TZ = pytz.timezone('America/Denver')
@@ -116,6 +117,77 @@ def map_to_intersections(df, key_intersections):
     
     return df, intersection_to_lon
 
+def make_time_plot(data, intersection_lon):
+    # Plotting with Plotly
+
+
+    fig = go.Figure()
+        
+    fig.add_trace(go.Scatter(
+        x=data['TimeOfDay'],
+        y=data['Longitude'],
+        mode='markers',
+        marker=dict(
+            color=data['Speed'],
+            # color=gpx_data['SpeedCategory'].apply(lambda x: color_map[x]),  # Map categorical values to colors
+            colorscale=[[0, 'red'], [0.05, 'yellow'], [0.3, 'lightgreen'], [0.5, 'green'], [0.8, 'darkgreen'], [1, 'purple']],
+            colorbar=dict(title='Speed Scale'),
+            size=10  # Adjust marker size as needed
+        ),
+        text=data['Name'],  # Hover text
+        hoverinfo='text'
+    ))
+
+    # Customize y-axis to show intersection names
+    fig.update_yaxes(
+        tickvals=list(intersection_lon.values()),  # Use longitude values as tick values
+        ticktext=list(intersection_lon.keys()),  # Use intersection names as tick texts
+        title='Key Intersections'
+    )
+
+    # Customize x-axis
+    fig.update_xaxes(
+        tickformat='%H:%M',
+        dtick=360  # 1 hour in milliseconds
+    )
+
+    # Set title
+    fig.update_layout(
+        title='Key Intersections vs Time of Day with Speed Gradient'
+    )
+
+    fig.show()
+
+# Function to plot data on a map
+def plot_data_on_map(df):
+    # Create a base map
+    m = folium.Map(tiles="cartodb positron", location=[df['Latitude'].mean(), df['Longitude'].mean()], zoom_start=25)
+    
+    # Define color for each speed category
+    colors = {
+        'Below 3 mph': 'red',
+        '3-15 mph': 'orange',
+        '15-30 mph': 'yellow',
+        'Above 30 mph': 'green'
+    }
+
+    # Add points to the map
+    for _, row in df.iterrows():
+        folium.CircleMarker(
+            location=[row['Latitude'], row['Longitude']],
+            radius=5,
+            color=colors[row['SpeedCategory']],
+            # fill=True,
+            fill_color= colors[row['SpeedCategory']], #'RdYlGn',
+            fill_opacity=0.7,
+            legend_name = 'Speed from GPX Data',
+            popup=f"Time: {row['TimeOfDay']}<br>Speed: {row['Speed']} mph"
+        ).add_to(m)
+    
+    # Save the map to an HTML file
+    m.save('gpx_map.html')
+    print('Map has been saved as gpx_map.html')
+
 # Main function
 def main(gpx_folder, kml_file):
     # get all gpx files into data frame
@@ -135,62 +207,21 @@ def main(gpx_folder, kml_file):
 
     # Map lat/lon to intersections
     gpx_data, intersection_to_lon = map_to_intersections(gpx_data, key_intersections)
-    
-    # Map lat/lon to intersections
-    # gpx_data = map_to_intersections(gpx_data, key_intersections)
 
     # Print the first 20 rows of the gpx_data DataFrame
     print(gpx_data.head(20))
     # Sort data by DateTime
     gpx_data = gpx_data.sort_values(by='TimeOfDay')
 
+    # plot using plotly for dynamic visualization. lat/lon by time
+    make_time_plot(gpx_data, intersection_to_lon)
+
+    # Plot the data on a map
+    plot_data_on_map(gpx_data)
+
+
     
-
-    # Define color mapping for speed categories
-    color_map = {
-        'Below 3 mph': 'red',
-        '3-15 mph': 'yellow',
-        '15-30 mph': 'lightgreen',
-        'Above 30 mph': 'darkgreen'
-    }
     
-    # Plotting with Plotly
-    fig = go.Figure()
-        
-    fig.add_trace(go.Scatter(
-        x=gpx_data['TimeOfDay'],
-        y=gpx_data['Longitude'],
-        mode='markers',
-        marker=dict(
-            color=gpx_data['Speed'],
-            # color=gpx_data['SpeedCategory'].apply(lambda x: color_map[x]),  # Map categorical values to colors
-            colorscale=[[0, 'red'], [0.05, 'yellow'], [0.3, 'lightgreen'], [0.5, 'green'], [0.8, 'darkgreen'], [1, 'purple']],
-            colorbar=dict(title='Speed Scale'),
-            size=10  # Adjust marker size as needed
-        ),
-        text=gpx_data['Name'],  # Hover text
-        hoverinfo='text'
-    ))
-
-    # Customize y-axis to show intersection names
-    fig.update_yaxes(
-        tickvals=list(intersection_to_lon.values()),  # Use longitude values as tick values
-        ticktext=list(intersection_to_lon.keys()),  # Use intersection names as tick texts
-        title='Key Intersections'
-    )
-
-    # Customize x-axis
-    fig.update_xaxes(
-        tickformat='%H:%M',
-        dtick=360  # 1 hour in milliseconds
-    )
-
-    # Set title
-    fig.update_layout(
-        title='Key Intersections vs Time of Day with Speed Gradient'
-    )
-
-    fig.show()
 
 
 # Run the inputs
