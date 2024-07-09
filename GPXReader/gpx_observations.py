@@ -3,6 +3,7 @@
 # then the file outputs a speed contour (sort of) chart where x axis is time of day and y axis is intersections on the corridor
 # color will represent speed, so that stops are easy to identify
 
+import os
 import pandas as pd
 import matplotlib.pyplot as plt
 import matplotlib.colors as mcolors
@@ -116,9 +117,20 @@ def map_to_intersections(df, key_intersections):
     return df, intersection_to_lon
 
 # Main function
-def main(gpx_file, kml_file):
-    # Parse GPX and KML files
-    gpx_data = parse_gpx(gpx_file)
+def main(gpx_folder, kml_file):
+    # get all gpx files into data frame
+    all_gpx_data = []
+
+    for filename in os.listdir(gpx_folder):
+        if filename.lower().endswith('.gpx'):
+            file_path = os.path.join(gpx_folder, filename)
+            print(f'Processing file: {filename}')
+            df = parse_gpx(file_path)
+            all_gpx_data.append(df)
+
+    gpx_data = pd.concat(all_gpx_data, ignore_index=True)
+
+    # Parse KML files
     key_intersections = parse_kml(kml_file)
 
     # Map lat/lon to intersections
@@ -181,7 +193,9 @@ def main(gpx_file, kml_file):
     fig.show()
 
 
-# Example usage
-gpx_file = 'data/5400_pm.gpx'
+# Run the inputs
+# File or Folder?
+# gpx_file = 'data/5400_pm.gpx'
+gpx_folder = 'data/PM 5400 S'
 kml_file = 'data/5400 S intersections.kml'
-main(gpx_file, kml_file)
+main(gpx_folder, kml_file)
