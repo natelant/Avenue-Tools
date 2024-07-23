@@ -161,7 +161,7 @@ def make_time_plot(data, intersection_lon):
 # Function to plot data on a map
 def plot_data_on_map(df):
     # Create a base map
-    m = folium.Map(tiles="cartodb positron", location=[df['Latitude'].mean(), df['Longitude'].mean()], zoom_start=25)
+    m = folium.Map(tiles="cartodb positron", location=[df['Latitude'].mean(), df['Longitude'].mean()], zoom_start=12)
     
     # Define color for each speed category
     colors = {
@@ -185,7 +185,8 @@ def plot_data_on_map(df):
         ).add_to(m)
     
     # Save the map to an HTML file
-    m.save('gpx_map.html')
+    m.save(map_output)
+    m.show()
     print('Map has been saved as gpx_map.html')
 
 # Main function
@@ -227,6 +228,7 @@ def main(gpx_folder, kml_file):
 # Run the inputs
 # File or Folder?
 # gpx_file = 'data/5400_pm.gpx'
-gpx_folder = 'data/PM 5400 S'
+gpx_folder = 'data/US6'
 kml_file = 'data/5400 S intersections.kml'
+map_output = 'output/SR6.html'
 main(gpx_folder, kml_file)

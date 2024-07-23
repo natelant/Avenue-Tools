@@ -1,10 +1,17 @@
 # ignore my data folders
 Data/
+data/
 analyze/
 data_dump/
 TravelTimesData/
 samples/
 output/
 
-#ignore .xlsx extension
+#ignore file extensions
 *.xlsx
+*.xls
+*.xlsm
+*.docx
+*.html
+*.pdf
+*.png
