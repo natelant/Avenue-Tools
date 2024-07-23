@@ -6,6 +6,7 @@ import pandas as pd
 import os
 from datetime import datetime, time
 import plotly.express as px
+import plotly.graph_objects as go
 
 # Specify the directory containing the Excel files
 directory = 'data'
@@ -14,17 +15,54 @@ directory = 'data'
 def time_to_datetime(t):
     return datetime.combine(datetime.today(), t)
 
+# function that cleans the excel files
+def clean_xlsm(file_path):
+    file_path = os.path.join(directory, filename)
+        # Read the Excel file into a dataframe
+    df = pd.read_excel(file_path)
+    
+    # Filter out invalid segments between multiple 'Start's without an intervening 'Stop'
+    segments = []
+    start_idx = None
+    valid_segment = True
+
+    for i, row in df.iterrows():
+        if row['Vehicle'] == 'Start':
+            if start_idx is not None:
+                # Exclude the segment if 'Start' is immediately followed by 'Stop'
+                if i == start_idx + 1 and df.loc[i, 'Vehicle'] == 'Stop':
+                    start_idx = None
+                    valid_segment = False
+                    continue
+            start_idx = i
+            valid_segment = True
+        elif row['Vehicle'] == 'Stop':
+            if start_idx is not None:
+                # Include only segments with valid data between 'Start' and 'Stop'
+                if valid_segment:
+                    segments.append(df.loc[start_idx:i])
+            start_idx = None
+            valid_segment = False
+
+    # Concatenate valid segments into a single DataFrame
+    if segments:
+        cleaned = pd.concat(segments)
+    else:
+        cleaned = pd.DataFrame(columns=file_path.columns)
+
+    return cleaned 
+
+
 # List to hold dataframes
 df_list = []
 
 # Iterate over all files in the directory
 for filename in os.listdir(directory):
     if filename.endswith(".xlsm"):
-        file_path = os.path.join(directory, filename)
-        # Read the Excel file into a dataframe
-        df = pd.read_excel(file_path)
+        # run clean function
+        clean_df = clean_xlsm(filename)
         # Append the dataframe to the list
-        df_list.append(df)
+        df_list.append(clean_df)
 
 # Concatenate all dataframes in the list into a single dataframe
 combined_df = pd.concat(df_list, ignore_index=True)
@@ -33,57 +71,13 @@ df = combined_df[columns]
 
 # !!!!!!!!!!!!! I may need to order by time stamp... frick maybe I want to clean each one before combining. or analyze one at a time. or group by Direction and solves that issue...
 # Sort the DataFrame by timestamp and Remove rows with NA values in the 'time stamp' column
-df = df.sort_values('Time Stamp').dropna(subset=['Time Stamp'])
+filtered_df = df.sort_values('Time Stamp').dropna(subset=['Time Stamp'])
 
 # Convert 'time stamp' to datetime for continuous axis plotting
-df['Timestamp'] = df['Time Stamp'].apply(time_to_datetime)
+filtered_df['Timestamp'] = filtered_df['Time Stamp'].apply(time_to_datetime)
 
 # --------------------------------------------------------------------------------
 # --------------------------------------------------------------------------------
-# Clean the data
-# Create a boolean mask to keep rows between 'start' and 'stop'
-# keep_row = False
-# mask = []
-
-# for vehicle in df['Vehicle']:
-#     if vehicle == 'Start':
-#         keep_row = True
-#     mask.append(keep_row or vehicle == 'Stop')
-#     if vehicle == 'Stop':
-#         keep_row = False
-    
-
-# # Filter the DataFrame
-# filtered_df = df[mask]
-
-# Filter out invalid segments between multiple 'Start's without an intervening 'Stop'
-segments = []
-start_idx = None
-valid_segment = True
-
-for i, row in df.iterrows():
-    if row['Vehicle'] == 'Start':
-        if start_idx is not None:
-            # Exclude the segment if 'Start' is immediately followed by 'Stop'
-            if i == start_idx + 1 and df.loc[i, 'Vehicle'] == 'Stop':
-                start_idx = None
-                valid_segment = False
-                continue
-        start_idx = i
-        valid_segment = True
-    elif row['Vehicle'] == 'Stop':
-        if start_idx is not None:
-            # Include only segments with valid data between 'Start' and 'Stop'
-            if valid_segment:
-                segments.append(df.loc[start_idx:i])
-        start_idx = None
-        valid_segment = False
-
-# Concatenate valid segments into a single DataFrame
-if segments:
-    filtered_df = pd.concat(segments)
-else:
-    filtered_df = pd.DataFrame(columns=df.columns)
 
 # Create the 'route number' column
 run = 0
@@ -150,15 +144,45 @@ for _, row in filtered_df.iterrows():
         fig.add_vline(x=row['Timestamp'], line=dict(color='red', width=2))
 
 # this solves the problem of looking faded. Something to do with the lines in between the bars. Going to be rough when I introduce a second direction
-fig.update_traces(marker_color='blue',
-                  marker_line_color='blue',
-                  selector=dict(type="bar"))
+# fig.update_traces(marker_color='blue',
+#                   marker_line_color='blue',
+#                   selector=dict(type="bar"))
 
 # Show the plot - this shows the quality of the data
 fig.show()
 
 
 # --------------------------------------------------------------
-# tables
+# --------------------------------------------------------------
+# tables and data analysis
 
-# 
+## HEADWAY ---------------------
+
+# drop NA values out of headway
+
+# Create a histogram to compare different types in Classification with Headway
+hist_fig = go.Figure()
+
+# Add a histogram trace for each classification type
+for vehicle in filtered_df['Vehicle'].unique():
+    filtered_data = filtered_df[filtered_df['Vehicle'] == vehicle]
+    hist_fig.add_trace(go.Histogram(
+        x=filtered_data['Headway'],
+        name=vehicle,
+        opacity=0.75,
+        nbinsx=10  # Adjust the number of bins as needed
+    ))
+
+# Update layout to add titles and legends
+hist_fig.update_layout(
+    title='Histogram of Headway Times by Classification',
+    xaxis_title='Headway (seconds)',
+    yaxis_title='Count',
+    barmode='overlay',  # Overlay histograms to compare distributions
+    legend_title='Classification',
+    template='plotly_white'
+)
+
+# Show the plot
+hist_fig.show()
+
