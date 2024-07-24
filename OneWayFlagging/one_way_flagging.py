@@ -132,7 +132,7 @@ def calculate_headway(data):
     df['Timestamp'] = df['Time Stamp'].apply(time_to_datetime)
 
     # Calculate the 'Headway' column and convert to seconds
-    df['Headway'] = df['Timestamp'].diff() * 3600 * 24
+    df['Headway'] = df['Timestamp'].diff().dt.total_seconds()
     # Create the 'Following' column by shifting the 'classification' column
     df['Following'] = df['Vehicle'].shift(1).apply(lambda x: 'Car' if x == 'Probe' else x)
     # Create the 'Group' column using the determine_group function
@@ -148,6 +148,7 @@ def calculate_headway(data):
 
     return df
 
+# visualize headway
 def visualize_headway(df):
     data = df.copy()
     # Convert 'time stamp' to datetime for continuous axis plotting
@@ -168,9 +169,9 @@ def visualize_headway(df):
             fig.add_vline(x=row['Timestamp'], line=dict(color='red', width=2))
 
     # this solves the problem of looking faded. Something to do with the lines in between the bars. Going to be rough when I introduce a second direction
-    # fig.update_traces(marker_color='blue',
-    #                   marker_line_color='blue',
-    #                   selector=dict(type="bar"))
+    fig.update_traces(marker_color='blue',
+                      marker_line_color='blue',
+                      selector=dict(type="bar"))
     return fig
 
 # --------------------------------------------------------------------------------------------------------------------------------------------
@@ -182,11 +183,11 @@ count_data = readin_counts(directory)
 
 # Add headway to count_data
 headway_data = calculate_headway(count_data)
-print(count_data.head(30))
 
 # Visualize headway - make sure the data is clean
 my_headway = visualize_headway(headway_data)
 my_headway.show()
+
 
 # Read in .gpx -> gpx_data
 
@@ -215,4 +216,4 @@ with pd.ExcelWriter(output_file, engine='xlsxwriter') as writer:
 print(f"File was successfully written to '{output_file}'.")
 
 # Open the Excel file
-os.system(f'start excel {output_file}')
+# os.system(f'start excel {output_file}')
