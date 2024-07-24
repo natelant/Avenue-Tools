@@ -22,6 +22,7 @@ import plotly.graph_objects as go
 
 # Specify the directory containing the Excel files
 directory = 'data'
+output_file = 'output/testing.xlsx'
 
 # --------------------------------------------------------------------------------------------------------------------------------------------
 # functions
@@ -62,8 +63,15 @@ def clean_xlsm(filename):
     else:
         cleaned = pd.DataFrame(columns=filename.columns)
 
+    # remove consecutive start-stops
+    drop_rows = cleaned[(cleaned['Vehicle'] == 'Start') & (cleaned['Vehicle'].shift(-1) == 'Stop')].index
+    drop_rows = drop_rows.union(drop_rows+1)
+
+    cleaned = cleaned.drop(drop_rows)
+
     return cleaned
 
+# function that reads in excel, cleans, combines, and filters the data
 def readin_counts(file_path):
     # List to hold dataframes
     df_list = []
@@ -95,7 +103,75 @@ def readin_counts(file_path):
 
     filtered_df['Run'] = runs
 
+    # reorder the columns
+    filtered_df = filtered_df[['Run', 'Time Stamp', 'Direction', 'Vehicle']]
+
     return filtered_df
+
+# write fucntion to convert Time Stamp to a datetime variable
+def time_to_datetime(t):
+    return datetime.combine(datetime.today(), t)
+
+# Define a function to determine the 'Group' value based on conditions
+def determine_group(row):
+    if row['Vehicle'] == 'Truck' and row['Following'] == 'Truck':
+        return 'Truck Following Truck'
+    elif row['Vehicle'] == 'Car' and row['Following'] == 'Truck':
+        return 'Car Following Truck'
+    elif row['Vehicle'] == 'Truck' and row['Following'] == 'Car':
+        return 'Truck Following Car'
+    elif row['Vehicle'] == 'Car' and row['Following'] == 'Car':
+        return 'Car Following Car'
+    else:
+        return None
+
+# function converts count_data to headway_data. 
+def calculate_headway(data):
+    df = data.copy()
+    # Convert 'time stamp' to datetime for continuous axis plotting
+    df['Timestamp'] = df['Time Stamp'].apply(time_to_datetime)
+
+    # Calculate the 'Headway' column and convert to seconds
+    df['Headway'] = df['Timestamp'].diff() * 3600 * 24
+    # Create the 'Following' column by shifting the 'classification' column
+    df['Following'] = df['Vehicle'].shift(1).apply(lambda x: 'Car' if x == 'Probe' else x)
+    # Create the 'Group' column using the determine_group function
+    df['Group'] = df.apply(determine_group, axis=1)
+
+    # Assign Nan to 'Headway' for rows where classification is 'stop' or 'start'
+    df.loc[df['Vehicle'] == 'Stop', 'Headway'] = float('nan')
+    df.loc[df['Vehicle'] == 'Start', 'Headway'] = float('nan')
+
+    # Remove column 'Timestamp' in-place
+    df.drop('Timestamp', axis=1, inplace=True)
+
+
+    return df
+
+def visualize_headway(df):
+    data = df.copy()
+    # Convert 'time stamp' to datetime for continuous axis plotting
+    data['Timestamp'] = data['Time Stamp'].apply(time_to_datetime)
+    # Create a bar chart using Plotly
+    fig = px.bar(data, x='Timestamp', y='Headway', 
+                title='Headway Over Time - Visualize the Data Collection',
+                # labels={'Time Stamp': 'Time Stamp', 'Headway': 'Headway (seconds)'},
+                hover_data={'Time Stamp': True, 'Headway': True, 'Group': True, 'Timestamp': False},
+                color='Direction',  # Color bars by vehicle classification
+                color_discrete_map={'EB': 'purple', 'WB': 'pink', 'NB': 'Orange', 'SB': 'blue'})  # Example color mapping
+
+    # Add vertical lines for 'start' and 'stop'
+    for _, row in data.iterrows():
+        if row['Vehicle'] == 'Start':
+            fig.add_vline(x=row['Timestamp'], line=dict(color='green', width=2))
+        elif row['Vehicle'] == 'Stop':
+            fig.add_vline(x=row['Timestamp'], line=dict(color='red', width=2))
+
+    # this solves the problem of looking faded. Something to do with the lines in between the bars. Going to be rough when I introduce a second direction
+    # fig.update_traces(marker_color='blue',
+    #                   marker_line_color='blue',
+    #                   selector=dict(type="bar"))
+    return fig
 
 # --------------------------------------------------------------------------------------------------------------------------------------------
 # main
@@ -104,9 +180,13 @@ def readin_counts(file_path):
 # Read in, clean and combine .xlsm -> count_data
 count_data = readin_counts(directory)
 
+# Add headway to count_data
+headway_data = calculate_headway(count_data)
 print(count_data.head(30))
 
-# 
+# Visualize headway - make sure the data is clean
+my_headway = visualize_headway(headway_data)
+my_headway.show()
 
 # Read in .gpx -> gpx_data
 
@@ -126,3 +206,13 @@ print(count_data.head(30))
 # Sheet 7 - start up loss time?
 # Sheet REGRESSION... master data, selective data?
 
+# # Create an Excel writer
+with pd.ExcelWriter(output_file, engine='xlsxwriter') as writer:
+    # Write the data tables to sheets in order
+    count_data.to_excel(writer, sheet_name='Vehicle Count Data', index=False)
+    headway_data.to_excel(writer, sheet_name='Headway Raw Data', index=False)
+
+print(f"File was successfully written to '{output_file}'.")
+
+# Open the Excel file
+os.system(f'start excel {output_file}')
