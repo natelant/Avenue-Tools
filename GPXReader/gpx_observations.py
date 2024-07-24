@@ -181,7 +181,7 @@ def plot_data_on_map(df):
             fill_color= colors[row['SpeedCategory']], #'RdYlGn',
             fill_opacity=0.7,
             legend_name = 'Speed from GPX Data',
-            popup=f"Time: {row['TimeOfDay']}<br>Speed: {row['Speed']} mph"
+            popup=f"Time: {row['TimeOfDay']}<br>Speed: {row['Speed']} mph<br>Lat: {row['Latitude']}<br>Lon: {row['Longitude']}"
         ).add_to(m)
     
     # Save the map to an HTML file
@@ -228,7 +228,7 @@ def main(gpx_folder, kml_file):
 # Run the inputs
 # File or Folder?
 # gpx_file = 'data/5400_pm.gpx'
-gpx_folder = 'data/US6'
-kml_file = 'data/5400 S intersections.kml'
-map_output = 'output/SR6.html'
+gpx_folder = 'GPXReader/data/US191'
+kml_file = 'GPXReader/data/5400 S intersections.kml'
+map_output = 'GPXReader/output/US191.html'
 main(gpx_folder, kml_file)
