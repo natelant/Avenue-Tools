@@ -79,7 +79,7 @@ filtered_df['Timestamp'] = filtered_df['Time Stamp'].apply(time_to_datetime)
 # --------------------------------------------------------------------------------
 # --------------------------------------------------------------------------------
 
-# Create the 'route number' column
+# Create the Runs column - Remember, Run is from "Start" to "Start"
 run = 0
 runs = []
 
