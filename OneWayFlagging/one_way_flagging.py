@@ -24,6 +24,10 @@ import xml.etree.ElementTree as ET
 import pytz
 import folium
 import geopandas as gpd
+from fastkml import kml
+import gpxpy
+import zipfile
+import matplotlib.pyplot as plt
 
 # Define Salt Lake City's timezone
 LOCAL_TZ = pytz.timezone('America/Denver')
@@ -203,7 +207,7 @@ def format_headway(data):
 
 # Haversine formula to calculate distance between two points on Earth
 def haversine(lat1, lon1, lat2, lon2):
-    R = 6371.0*0.621371 # Earth radius in (kilometers * 1 mile / 1 kilometer) = miles
+    R = 6371000  # Earth radius in meters
     
     dlat = np.radians(lat2 - lat1)
     dlon = np.radians(lon2 - lon1)
@@ -211,10 +215,10 @@ def haversine(lat1, lon1, lat2, lon2):
     a = np.sin(dlat / 2) ** 2 + np.cos(np.radians(lat1)) * np.cos(np.radians(lat2)) * np.sin(dlon / 2) ** 2
     c = 2 * np.arctan2(np.sqrt(a), np.sqrt(1 - a))
     
-    distance = R * c  # in miles
+    distance = R * c  # in meters
     return distance
 
-# Function to parse GPX file and calculate speed
+# Function to parse GPX file and calculate speed (and grade) returns a df
 def parse_gpx(file_path):
     tree = ET.parse(file_path)
     root = tree.getroot()
@@ -270,6 +274,7 @@ def parse_gpx(file_path):
 
     return df
 
+# function searches folder for GPX data. It cleans individually and appends to a df
 def readin_gpx(file_path):
     all_gpx_data = []
 
@@ -285,7 +290,7 @@ def readin_gpx(file_path):
     return df
 
 # Function to plot data on a map
-def plot_data_on_map(df, output_path):
+def plot_data_on_map(df, output_path, json_points):
     # Create a base map
     m = folium.Map(tiles="cartodb positron", location=[df['Latitude'].mean(), df['Longitude'].mean()], zoom_start=12)
     
@@ -309,10 +314,146 @@ def plot_data_on_map(df, output_path):
             legend_name = 'Speed from GPX Data',
             popup=f"Time: {row['TimeOfDay']}<br>Speed: {row['Speed']} mph<br>Lat: {row['Latitude']}<br>Lon: {row['Longitude']}"
         ).add_to(m)
+
+    # Add JSON points to the map
+    for point in json_points:
+        folium.Marker(
+            location=[point['lat'], point['lon']],
+            popup=f"Route ID: {point['route_id']}<br>Segment ID: {point['segment_id']}<br>Lat: {point['lat']}<br>Lon: {point['lon']}",
+            icon=folium.Icon(color='blue', icon='info-sign')
+        ).add_to(m)
     
     # Save the map to an HTML file
     m.save(output_path)
     print(f'Map has been saved to {output_path}')
+
+# Function to convert KMZ to KML and return the path to the KML file
+def convert_kmz_to_kml(kmz_file):
+    with zipfile.ZipFile(kmz_file, 'r') as kmz:
+        for file_name in kmz.namelist():
+            if file_name.endswith('.kml'):
+                kmz.extract(file_name, os.path.dirname(kmz_file))
+                return os.path.join(os.path.dirname(kmz_file), file_name)
+    return None
+
+# function to parse KML file containing significant intersection information
+# ------------------
+def parse_kml(folder):
+    intersections = []
+
+    # search folder for the kml file
+    for filename in os.listdir(folder):
+        if filename.lower().endswith('.kml'):
+            file_path = os.path.join(folder, filename)
+            print(f'Processing file: {filename}')
+            kml_file = file_path
+        elif filename.lower().endswith('.kmz'):
+            # might need some QC here...
+            kml_file = convert_kmz_to_kml(filename)
+
+    
+    with open(kml_file, 'rb') as file:
+        doc = file.read()
+        k = kml.KML()
+        k.from_string(doc)
+        
+        # Assuming the KML has a single document
+        for document in k.features():
+            for folder in document.features():
+                for feature in folder.features():
+                    if isinstance(feature, kml.Placemark):
+                        geometry = feature.geometry
+                        if geometry:
+                            if geometry.geom_type == 'Point':
+                                coordinates = list(geometry.coords)[0]
+                                intersections.append({
+                                    'route_id': feature.name,
+                                    'segment_id': feature.name,
+                                    #'description': feature.description if feature.description else '',
+                                    'lat': coordinates[1],
+                                    'lon': coordinates[0]
+                                })
+                            
+    return intersections
+
+# Function to calculate travel time between two timestamps. This function is used in the process travel times function
+def calculate_travel_time(start_time, end_time):
+    start_datetime = datetime.strptime(start_time, '%Y-%m-%dT%H:%M:%SZ')
+    end_datetime = datetime.strptime(end_time, '%Y-%m-%dT%H:%M:%SZ')
+    return (end_datetime - start_datetime).total_seconds()
+
+# Function to parse GPX file and calculate travel times
+def process_travel_times(folder, intersections):
+    gpx_data = []
+
+    # search folder for the kml file
+    for filename in os.listdir(folder):
+        if filename.lower().endswith('.gpx'):
+            file_path = os.path.join(folder, filename)
+            print(f'Processing file: {filename}')
+            # ---- # add something to join multiple gpx files just in case
+            gpx_file = file_path
+
+    # Parse the GPX file
+    with open(gpx_file, 'r') as gpx_file:
+        gpx = gpxpy.parse(gpx_file)
+        # Extract data from GPX
+        for track in gpx.tracks:
+            for segment in track.segments:
+                for point in segment.points:
+                    gpx_data.append({'lat': point.latitude, 'lon': point.longitude, 'time': point.time.strftime('%Y-%m-%dT%H:%M:%SZ')})
+
+    # Initialize variables
+    output_data = []  # Initialize output data list
+    prev_intersection = None  # Initialize previous intersection
+
+    # Iterate through each point in GPX data
+    for point in gpx_data:
+        closest_intersection = None
+        # Iterate through each significant intersection
+        for intersection in intersections:
+            # Calculate the distance between the current point and the intersection
+            distance = haversine(point['lat'], point['lon'], intersection['lat'], intersection['lon'])
+            # Check if the distance is within the threshold (50 feet)
+            if distance <= 15:  # 50 feet in meters
+                closest_intersection = intersection
+                # Assign the time of the current point to the closest intersection
+                closest_intersection['time'] = point['time']
+                break  # Exit the loop if a significant intersection is found within the threshold
+
+        # If a closest intersection is found within the threshold, process it
+        if closest_intersection:
+            if prev_intersection:
+                # Calculate travel time between the previous intersection and the current closest intersection
+                travel_time = calculate_travel_time(prev_intersection['time'], point['time'])
+                # Store the segment start, segment finish, and travel time in the output data
+                output_data.append({'route_ID': prev_intersection['route_id'] + ' / ' + closest_intersection['route_id'], 'segment_start': prev_intersection['segment_id'], 'segment_finish': closest_intersection['segment_id'], 'travel_time': travel_time})
+            prev_intersection = closest_intersection
+
+    # Convert output data to DataFrame
+    output_df = pd.DataFrame(output_data)
+    return output_df
+
+def summarize_counts(df):
+    # Convert 'Time Stamp' to datetime and extract the hour
+    df['TimeStamp'] = pd.to_datetime(df['Time Stamp'], format='%H:%M:%S')
+    df['Hour'] = df['TimeStamp'].dt.hour
+
+    # Exclude 'Start' and 'Stop' from the dataset
+    df_filtered = df[~df['Vehicle'].isin(['Start', 'Stop'])]
+
+    # Group by hour and direction, and calculate the total volume and truck percentage
+    summary = df_filtered.groupby(['Hour', 'Direction']).agg(
+        Volume=('Vehicle', 'count'),
+        Trucks=('Vehicle', lambda x: (x == 'Truck').sum())
+    ).reset_index()
+
+    # Calculate the truck percentage
+    summary['Truck Percentage'] = (summary['Trucks'] / summary['Volume']) * 100
+
+    # Drop the Trucks column as it's no longer needed
+    summary_table = summary.drop(columns=['Trucks'])
+    return summary_table
 
 # --------------------------------------------------------------------------------------------------------------------------------------------
 # main
@@ -325,6 +466,7 @@ output_map = 'output/map.html'
 
 # Read in, clean and combine .xlsm -> count_data
 count_data = readin_counts(directory)
+summary_counts = summarize_counts(count_data)
 
 # Add headway to count_data
 headway_data = calculate_headway(count_data)
@@ -339,16 +481,49 @@ my_headway = visualize_headway(headway_data)
 
 # Read in .gpx -> gpx_data as a df
 gpx_data = readin_gpx(directory)
-print(gpx_data.head(50))
 
-# write GPX to a map.html
-plot_data_on_map(gpx_data, output_map)
+
 
 
 # Calculate Travel times
-# parse KML
-# join with GPX
+# parse KML output as json
+key_intersections = parse_kml(directory)
+print(key_intersections)
 
+# write GPX to a map.html and include the KML points (input as json)
+plot_data_on_map(gpx_data, output_map, key_intersections)
+
+# join with GPX and calculate travel times
+# ------------------------------------------
+travel_times = process_travel_times(directory, key_intersections)
+print(travel_times)
+
+# Remove rows with travel_time equal to 0.0
+df_filtered = travel_times[travel_times['travel_time'] != 0.0]
+
+# Group by route_ID and create columns for each run
+runs_df = df_filtered.groupby('route_ID')['travel_time'].apply(list).reset_index()
+
+# Split the travel_time list into separate columns
+max_runs = runs_df['travel_time'].apply(len).max()
+runs_df = pd.concat([runs_df.drop(['travel_time'], axis=1), 
+                     pd.DataFrame(runs_df['travel_time'].to_list(), columns=[f'Run {i+1}' for i in range(max_runs)])], axis=1)
+print(runs_df)
+
+# # Melt the DataFrame for visualization
+# melted_df = runs_df.melt(id_vars=['route_ID'], value_vars=[f'Run {i+1}' for i in range(max_runs)], 
+#                          var_name='Run', value_name='travel_time').dropna()
+
+# # Plotting with matplotlib
+# plt.figure(figsize=(12, 6))
+# melted_df.boxplot(column='travel_time', by='route_ID', grid=False)
+# plt.title('Travel Times for Each Route ID')
+# plt.suptitle('')  # Remove the default title to avoid overlapping
+# plt.xlabel('Route ID')
+# plt.ylabel('Travel Time (seconds)')
+# plt.xticks(rotation=45)
+# plt.show()
+# ---------------------------------------------
 
 
 
@@ -360,12 +535,16 @@ plot_data_on_map(gpx_data, output_map)
 # Write excel ouptut file ---
 # Sheet 1 - raw count data (Time Stamp, Vehicle, Direction)
 # Sheet 2 - raw gpx data (Time Stamp, lat, lon, speed, grade)
-# Sheet 3 - summary table (Direction: Volume, Arrival rate, classification, travel time, average speed, distance, average car headway, average truck headway...)
+# Sheet 3 - Hourly summary table (Direction: Hourly Volume, classification, 
 # Sheet 4 - headway data (Truck, Car) or (Truck following Truck, Truck following Car, Car Following Car, Car Following Truck) - for histograms and box plots
-# Sheet 5 - raw travel times data (Run, Route, direction, avg speed, distance, travel time, stops)
-# Sheet 6 - green time summary (Run, total run time, green time, red time, average travel time, )
+#           average headway - exclude first car/truck
+# Sheet 5 - Runs travel times data (Run, Route, direction, avg speed, distance, travel time, stops, grade) start time (to link to hour...)
+# Sheet  5... Runs summary (From GPX data)
+## Sheet 6 - Cycle summary (Run, total run time, green time, red time, all red time, ) 
 # Sheet 7 - start up loss time?
 # Sheet REGRESSION... master data, selective data?
+
+# HOURLY Delay = actual Travel time - expected travel time (inside the max queue zone)
 
 # # Create an Excel writer
 with pd.ExcelWriter(output_file, engine='xlsxwriter') as writer:
@@ -373,8 +552,13 @@ with pd.ExcelWriter(output_file, engine='xlsxwriter') as writer:
     count_data.to_excel(writer, sheet_name='Vehicle Count Data', index=False)
     gpx_data.drop('SpeedCategory', axis=1, inplace=True)
     gpx_data.to_excel(writer, sheet_name='GPX Data', index=False)
+    summary_counts.to_excel(writer, sheet_name='Count Summary', index=False)
     headway_data.to_excel(writer, sheet_name='Headway Raw Data', index=False)
     headway_formatted.to_excel(writer, sheet_name='Headway Graphs', index=False)
+    travel_times.to_excel(writer, sheet_name='Travel Times Raw Data', index=False)
+    runs_df.to_excel(writer, sheet_name='Travel Times Runs', index=False)
+
+
 
 print(f"File was successfully written to '{output_file}'.")
 
