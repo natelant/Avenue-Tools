@@ -230,12 +230,15 @@ def parse_gpx(file_path):
     data = []
     previous_point = None
     previous_time = None
+    previous_elevation = None
     
     for trkpt in root.findall('.//gpx:trkpt', namespaces):
         timestamp = trkpt.find('gpx:time', namespaces).text
         lat = float(trkpt.get('lat'))
         lon = float(trkpt.get('lon'))
-        elevation = trkpt.find('gpx:ele', namespaces).text
+        elevation_str = trkpt.find('gpx:ele', namespaces).text
+        elevation = float(elevation_str) # in meters
+
         
         # Handle different timestamp formats
         try:
@@ -247,21 +250,25 @@ def parse_gpx(file_path):
         time_of_day_local = time_of_day_utc.replace(tzinfo=pytz.utc).astimezone(LOCAL_TZ)
         
         if previous_point is not None and previous_time is not None:
-            distance = haversine(previous_point[0], previous_point[1], lat, lon)
-            time_diff = (time_of_day_local - previous_time).total_seconds() / 3600.0  # time difference in hours
+            distance = haversine(previous_point[0], previous_point[1], lat, lon) # meters
+            time_diff = (time_of_day_local - previous_time).total_seconds()  # time difference in seconds
+            elevation_diff = elevation - previous_elevation
             speed = distance / time_diff if time_diff != 0 else 0
+            speed_mph = speed * 2.23694  # convert speed to mph
+            grade = elevation_diff / distance * 100 if distance != 0 else 0
         else:
             speed = 0.0
+            speed_mph = 0.0
+            distance = 0.0
+            grade = 0.0
 
-        # GRADE --------
-
-        # --------------
         
-        data.append([time_of_day_local.strftime('%H:%M:%S'), lat, lon, speed, elevation])
+        data.append([time_of_day_local.strftime('%H:%M:%S'), lat, lon, distance, speed, speed_mph, elevation, grade])
         previous_point = (lat, lon)
         previous_time = time_of_day_local
+        previous_elevation = elevation
     
-    df = pd.DataFrame(data, columns=['TimeOfDay', 'Latitude', 'Longitude', 'Speed', 'Elevation'])
+    df = pd.DataFrame(data, columns=['TimeOfDay', 'Latitude', 'Longitude', 'Distance', 'Speed', 'Speed (mph)', 'Elevation', 'Grade (%)'])
 
     bins = [-float('inf'), 3, 15, 30, float('inf')]
     labels = ['Below 3 mph', '3-15 mph', '15-30 mph', 'Above 30 mph']
@@ -376,7 +383,7 @@ def parse_kml(folder):
                             
     return intersections
 
-# Function to calculate travel time between two timestamps. This function is used in the process travel times function
+# Function to calculate travel time between two timestamps (in seconds). This function is used in the process travel times function
 def calculate_travel_time(start_time, end_time):
     start_datetime = datetime.strptime(start_time, '%Y-%m-%dT%H:%M:%SZ')
     end_datetime = datetime.strptime(end_time, '%Y-%m-%dT%H:%M:%SZ')
@@ -461,7 +468,7 @@ def summarize_counts(df):
 
 # Specify the directory containing the Excel files
 directory = 'data'
-output_file = 'output/testing.xlsx'
+output_file = 'output/testing_grade.xlsx'
 output_map = 'output/map.html'
 
 # Read in, clean and combine .xlsm -> count_data
@@ -549,6 +556,7 @@ print(runs_df)
 # # Create an Excel writer
 with pd.ExcelWriter(output_file, engine='xlsxwriter') as writer:
     # Write the data tables to sheets in order
+    count_data.drop('TimeStamp', axis=1, inplace=True)
     count_data.to_excel(writer, sheet_name='Vehicle Count Data', index=False)
     gpx_data.drop('SpeedCategory', axis=1, inplace=True)
     gpx_data.to_excel(writer, sheet_name='GPX Data', index=False)
@@ -556,7 +564,7 @@ with pd.ExcelWriter(output_file, engine='xlsxwriter') as writer:
     headway_data.to_excel(writer, sheet_name='Headway Raw Data', index=False)
     headway_formatted.to_excel(writer, sheet_name='Headway Graphs', index=False)
     travel_times.to_excel(writer, sheet_name='Travel Times Raw Data', index=False)
-    runs_df.to_excel(writer, sheet_name='Travel Times Runs', index=False)
+    runs_df.to_excel(writer, sheet_name='Travel Times Runs (sec)', index=False)
 
 
 
