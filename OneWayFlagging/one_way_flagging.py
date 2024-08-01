@@ -390,7 +390,7 @@ def calculate_travel_time(start_time, end_time):
     return (end_datetime - start_datetime).total_seconds()
 
 # Function to parse GPX file and calculate travel times
-def process_travel_times(folder, intersections):
+def process_travel_times(folder, intersections, speed_limit_mph):
     gpx_data = []
 
     # search folder for the kml file
@@ -413,9 +413,10 @@ def process_travel_times(folder, intersections):
     # Initialize variables
     output_data = []  # Initialize output data list
     prev_intersection = None  # Initialize previous intersection
+    cumulative_distance = 0.0  # Initialize cumulative distance
 
     # Iterate through each point in GPX data
-    for point in gpx_data:
+    for i, point in enumerate(gpx_data):
         closest_intersection = None
         # Iterate through each significant intersection
         for intersection in intersections:
@@ -428,14 +429,38 @@ def process_travel_times(folder, intersections):
                 closest_intersection['time'] = point['time']
                 break  # Exit the loop if a significant intersection is found within the threshold
 
+        # Add distance between consecutive GPX points to cumulative distance
+        if i > 0:
+            cumulative_distance += haversine(gpx_data[i-1]['lat'], gpx_data[i-1]['lon'], point['lat'], point['lon'])
+
+
         # If a closest intersection is found within the threshold, process it
         if closest_intersection:
             if prev_intersection:
                 # Calculate travel time between the previous intersection and the current closest intersection
                 travel_time = calculate_travel_time(prev_intersection['time'], point['time'])
-                # Store the segment start, segment finish, and travel time in the output data
-                output_data.append({'route_ID': prev_intersection['route_id'] + ' / ' + closest_intersection['route_id'], 'segment_start': prev_intersection['segment_id'], 'segment_finish': closest_intersection['segment_id'], 'travel_time': travel_time})
+                # Convert cumulative distance from meters to miles
+                total_distance_miles = cumulative_distance * 0.000621371
+                # Calculate average speed in mph
+                average_speed = (total_distance_miles / (travel_time / 3600)) if travel_time > 0 else 0
+                # Calculate expected travel time based on speed limit
+                expected_travel_time = total_distance_miles / speed_limit_mph * 3600  # in seconds
+                # Calculate delay
+                delay = travel_time - expected_travel_time
+                
+                # Store the segment start, segment finish, travel time, total distance, and average speed in the output data
+                output_data.append({
+                    'route_ID': prev_intersection['route_id'] + ' / ' + closest_intersection['route_id'],
+                    'segment_start': prev_intersection['segment_id'],
+                    'segment_finish': closest_intersection['segment_id'],
+                    'total_distance (mi)': cumulative_distance * 0.000621371,
+                    'average_speed (mph)': average_speed,
+                    'travel_time (sec)': travel_time,
+                    'expected_travel_time': expected_travel_time,
+                    'delay': delay
+                })
             prev_intersection = closest_intersection
+            cumulative_distance = 0.0  # Reset cumulative distance
 
     # Convert output data to DataFrame
     output_df = pd.DataFrame(output_data)
@@ -468,8 +493,9 @@ def summarize_counts(df):
 
 # Specify the directory containing the Excel files
 directory = 'data'
-output_file = 'output/testing_grade.xlsx'
+output_file = 'output/testing_delay.xlsx'
 output_map = 'output/map.html'
+speed_limit = 45 # must be in mph
 
 # Read in, clean and combine .xlsm -> count_data
 count_data = readin_counts(directory)
@@ -502,19 +528,19 @@ plot_data_on_map(gpx_data, output_map, key_intersections)
 
 # join with GPX and calculate travel times
 # ------------------------------------------
-travel_times = process_travel_times(directory, key_intersections)
+travel_times = process_travel_times(directory, key_intersections, speed_limit)
 print(travel_times)
 
 # Remove rows with travel_time equal to 0.0
-df_filtered = travel_times[travel_times['travel_time'] != 0.0]
+df_filtered = travel_times[travel_times['travel_time (sec)'] != 0.0]
 
 # Group by route_ID and create columns for each run
-runs_df = df_filtered.groupby('route_ID')['travel_time'].apply(list).reset_index()
+runs_df = df_filtered.groupby('route_ID')['travel_time (sec)'].apply(list).reset_index()
 
 # Split the travel_time list into separate columns
-max_runs = runs_df['travel_time'].apply(len).max()
-runs_df = pd.concat([runs_df.drop(['travel_time'], axis=1), 
-                     pd.DataFrame(runs_df['travel_time'].to_list(), columns=[f'Run {i+1}' for i in range(max_runs)])], axis=1)
+max_runs = runs_df['travel_time (sec)'].apply(len).max()
+runs_df = pd.concat([runs_df.drop(['travel_time (sec)'], axis=1), 
+                     pd.DataFrame(runs_df['travel_time (sec)'].to_list(), columns=[f'Run {i+1}' for i in range(max_runs)])], axis=1)
 print(runs_df)
 
 # # Melt the DataFrame for visualization
