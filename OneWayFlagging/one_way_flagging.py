@@ -100,19 +100,9 @@ def readin_counts(file_path):
     # Sort the DataFrame by timestamp and Remove rows with NA values in the 'time stamp' column
     filtered_df = df.sort_values('Time Stamp').dropna(subset=['Time Stamp'])
 
-    # Create the Runs column - Remember, Run is from "Start" to "Start"
-    run = 0
-    runs = []
-
-    for i, row in filtered_df.iterrows():
-        if row['Vehicle'] == 'Start':
-            run += 1
-        runs.append(run)
-
-    filtered_df['Run'] = runs
 
     # reorder the columns
-    filtered_df = filtered_df[['Run', 'Time Stamp', 'Direction', 'Vehicle']]
+    filtered_df = filtered_df[['Time Stamp', 'Direction', 'Vehicle']]
 
     return filtered_df
 
@@ -487,13 +477,77 @@ def summarize_counts(df):
     summary_table = summary.drop(columns=['Trucks'])
     return summary_table
 
+def process_cycles(data):
+    # Convert 'time stamp' to datetime for continuous axis plotting
+    data['Timestamp'] = data['Time Stamp'].apply(time_to_datetime)
+    # filter data to only start and stop
+    df = data[data['Vehicle'].isin(['Start', 'Stop'])]
+
+
+    # Initialize result dictionary
+    results = {
+        'Cycle Length': [],
+        'Split Length': [],
+        'Green Time': [],
+        'Red Time': [],
+        'All Red Time': []
+    }
+
+    # Determine the primary direction
+    primary_direction = df.iloc[0]['Direction']
+    opposite_direction = df[df['Direction'] != primary_direction]['Direction'].iloc[0]
+
+    primary_events = df[df['Direction'] == primary_direction].reset_index(drop=True)
+    opposite_events = df[df['Direction'] == opposite_direction].reset_index(drop=True)
+
+    num_cycles = min(len(primary_events) // 2, len(opposite_events) // 2)
+
+    for i in range(num_cycles):
+        # Calculate cycle length
+        if i + 1 < len(primary_events) // 2:
+            cycle_length = (primary_events.loc[(i + 1) * 2, 'Timestamp'] - primary_events.loc[i * 2, 'Timestamp']).total_seconds()
+            results['Cycle Length'].append(cycle_length)
+
+        # Calculate split lengths
+        split_length_primary_to_opposite = (opposite_events.loc[i * 2, 'Timestamp'] - primary_events.loc[i * 2, 'Timestamp']).total_seconds()
+        results['Split Length'].append({primary_direction: split_length_primary_to_opposite})
+        
+        if i + 1 < len(primary_events) // 2:
+            split_length_opposite_to_primary = (primary_events.loc[(i + 1) * 2, 'Timestamp'] - opposite_events.loc[i * 2, 'Timestamp']).total_seconds()
+            results['Split Length'].append({opposite_direction: split_length_opposite_to_primary})
+
+        # Calculate green times
+        green_time_primary = (primary_events.loc[i * 2 + 1, 'Timestamp'] - primary_events.loc[i * 2, 'Timestamp']).total_seconds()
+        results['Green Time'].append({primary_direction: green_time_primary})
+
+        green_time_opposite = (opposite_events.loc[i * 2 + 1, 'Timestamp'] - opposite_events.loc[i * 2, 'Timestamp']).total_seconds()
+        results['Green Time'].append({opposite_direction: green_time_opposite})
+
+        # Calculate red times
+        if i + 1 < len(primary_events) // 2:
+            red_time_primary = cycle_length - green_time_primary
+            results['Red Time'].append({primary_direction: red_time_primary})
+        
+        red_time_opposite = cycle_length - green_time_opposite
+        results['Red Time'].append({opposite_direction: red_time_opposite})
+
+        # Calculate all red times
+        all_red_time_primary_to_opposite = split_length_primary_to_opposite - green_time_primary
+        results['All Red Time'].append({primary_direction: all_red_time_primary_to_opposite})
+        
+        if i + 1 < len(primary_events) // 2:
+            all_red_time_opposite_to_primary = split_length_opposite_to_primary - green_time_opposite
+            results['All Red Time'].append({opposite_direction: all_red_time_opposite_to_primary})
+
+    return df, results
+
 # --------------------------------------------------------------------------------------------------------------------------------------------
 # main
 # --------------------------------------------------------------------------------------------------------------------------------------------
 
 # Specify the directory containing the Excel files
 directory = 'data'
-output_file = 'output/testing_delay.xlsx'
+output_file = 'output/testing_cycles.xlsx'
 output_map = 'output/map.html'
 speed_limit = 45 # must be in mph
 
@@ -509,7 +563,7 @@ headway_formatted = format_headway(headway_data)
 
 # Visualize headway - make sure the data is clean
 my_headway = visualize_headway(headway_data)
-## my_headway.show()
+my_headway.show()
 
 
 # Read in .gpx -> gpx_data as a df
@@ -521,7 +575,7 @@ gpx_data = readin_gpx(directory)
 # Calculate Travel times
 # parse KML output as json
 key_intersections = parse_kml(directory)
-print(key_intersections)
+
 
 # write GPX to a map.html and include the KML points (input as json)
 plot_data_on_map(gpx_data, output_map, key_intersections)
@@ -529,19 +583,23 @@ plot_data_on_map(gpx_data, output_map, key_intersections)
 # join with GPX and calculate travel times
 # ------------------------------------------
 travel_times = process_travel_times(directory, key_intersections, speed_limit)
-print(travel_times)
+
 
 # Remove rows with travel_time equal to 0.0
 df_filtered = travel_times[travel_times['travel_time (sec)'] != 0.0]
 
 # Group by route_ID and create columns for each run
 runs_df = df_filtered.groupby('route_ID')['travel_time (sec)'].apply(list).reset_index()
+delay_df = df_filtered.groupby('route_ID')['delay'].apply(list).reset_index()
 
 # Split the travel_time list into separate columns
 max_runs = runs_df['travel_time (sec)'].apply(len).max()
 runs_df = pd.concat([runs_df.drop(['travel_time (sec)'], axis=1), 
                      pd.DataFrame(runs_df['travel_time (sec)'].to_list(), columns=[f'Run {i+1}' for i in range(max_runs)])], axis=1)
-print(runs_df)
+
+delay_df = pd.concat([delay_df.drop(['delay'], axis=1), 
+                     pd.DataFrame(delay_df['delay'].to_list(), columns=[f'Run {i+1}' for i in range(max_runs)])], axis=1)
+
 
 # # Melt the DataFrame for visualization
 # melted_df = runs_df.melt(id_vars=['route_ID'], value_vars=[f'Run {i+1}' for i in range(max_runs)], 
@@ -557,6 +615,15 @@ print(runs_df)
 # plt.xticks(rotation=45)
 # plt.show()
 # ---------------------------------------------
+
+# cycle length analysis, function returns the clean data and the results (I still need to organize)
+cycle_data, results = process_cycles(count_data)
+
+# Display the calculated times
+for key, values in results.items():
+    print(f"{key}:")
+    for value in values:
+        print(f"  {value}")
 
 
 
@@ -582,15 +649,20 @@ print(runs_df)
 # # Create an Excel writer
 with pd.ExcelWriter(output_file, engine='xlsxwriter') as writer:
     # Write the data tables to sheets in order
-    count_data.drop('TimeStamp', axis=1, inplace=True)
+    count_data.drop(['TimeStamp', 'Hour', 'Timestamp'], axis=1, inplace=True)
     count_data.to_excel(writer, sheet_name='Vehicle Count Data', index=False)
     gpx_data.drop('SpeedCategory', axis=1, inplace=True)
     gpx_data.to_excel(writer, sheet_name='GPX Data', index=False)
+    cycle_data.drop(['TimeStamp', 'Hour', 'Timestamp'], axis=1, inplace=True)
+    cycle_data.to_excel(writer, sheet_name='Cycle Data', index=False)
     summary_counts.to_excel(writer, sheet_name='Count Summary', index=False)
-    headway_data.to_excel(writer, sheet_name='Headway Raw Data', index=False)
+    headway_data.to_excel(writer, sheet_name='Headway Data', index=False)
+    # headway results .to_excel(writer, sheet_name='Headway Results', index=False)
     headway_formatted.to_excel(writer, sheet_name='Headway Graphs', index=False)
-    travel_times.to_excel(writer, sheet_name='Travel Times Raw Data', index=False)
-    runs_df.to_excel(writer, sheet_name='Travel Times Runs (sec)', index=False)
+    df_filtered.to_excel(writer, sheet_name='Travel Times Data', index=False)
+    runs_df.to_excel(writer, sheet_name='Travel Times Table (sec)', index=False)
+    delay_df.to_excel(writer, sheet_name='Delay Table (sec)', index=False)
+    #results_df.to_excel(writer, sheet_name='Cycles...', index=False)
 
 
 
