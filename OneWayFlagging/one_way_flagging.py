@@ -480,11 +480,14 @@ def process_cycles(data):
     # Convert 'time stamp' to datetime for continuous axis plotting
     data['Timestamp'] = data['Time Stamp'].apply(time_to_datetime)
     # filter data to only start and stop
-    df = data[data['Vehicle'].isin(['Start', 'Stop'])]
+    df = data[data['Vehicle'].isin(['Start', 'Stop'])].reset_index(drop=True)
 
 
     # Initialize result dictionary
-    results = {
+    cycle_summary  = {
+        'Start Time': [],
+        'Cycle ID': [],
+        'Direction': [],
         'Cycle Length': [],
         'Split Length': [],
         'Green Time': [],
@@ -502,43 +505,95 @@ def process_cycles(data):
     num_cycles = min(len(primary_events) // 2, len(opposite_events) // 2)
 
     for i in range(num_cycles):
-        # Calculate cycle length
-        if i + 1 < len(primary_events) // 2:
-            cycle_length = (primary_events.loc[(i + 1) * 2, 'Timestamp'] - primary_events.loc[i * 2, 'Timestamp']).total_seconds()
-            results['Cycle Length'].append(cycle_length)
+        # Cycle ID for unique identification
+        cycle_id = i + 1
 
-        # Calculate split lengths
-        split_length_primary_to_opposite = (opposite_events.loc[i * 2, 'Timestamp'] - primary_events.loc[i * 2, 'Timestamp']).total_seconds()
-        results['Split Length'].append({primary_direction: split_length_primary_to_opposite})
-        
-        if i + 1 < len(primary_events) // 2:
-            split_length_opposite_to_primary = (primary_events.loc[(i + 1) * 2, 'Timestamp'] - opposite_events.loc[i * 2, 'Timestamp']).total_seconds()
-            results['Split Length'].append({opposite_direction: split_length_opposite_to_primary})
+        # Start time of the cycle
+        start_time = primary_events.loc[i * 2, 'Time Stamp']
 
-        # Calculate green times
-        green_time_primary = (primary_events.loc[i * 2 + 1, 'Timestamp'] - primary_events.loc[i * 2, 'Timestamp']).total_seconds()
-        results['Green Time'].append({primary_direction: green_time_primary})
+        # Check if the necessary events are available for both directions
+        # makes sure that it goes primary direction, then opposite direction, then back to primary direction
+        if (df.loc[i * 2 + 4, 'Direction'] != opposite_direction):
+    
 
-        green_time_opposite = (opposite_events.loc[i * 2 + 1, 'Timestamp'] - opposite_events.loc[i * 2, 'Timestamp']).total_seconds()
-        results['Green Time'].append({opposite_direction: green_time_opposite})
+            # Calculate cycle length
+            if i + 1 < len(primary_events) // 2:
+                cycle_length = (primary_events.loc[(i + 1) * 2, 'Timestamp'] - primary_events.loc[i * 2, 'Timestamp']).total_seconds()
+                
+            else:
+                cycle_length = None  # Handle edge case
 
-        # Calculate red times
-        if i + 1 < len(primary_events) // 2:
-            red_time_primary = cycle_length - green_time_primary
-            results['Red Time'].append({primary_direction: red_time_primary})
-        
-        red_time_opposite = cycle_length - green_time_opposite
-        results['Red Time'].append({opposite_direction: red_time_opposite})
+            # Calculate split lengths
+            split_length_primary_to_opposite = (opposite_events.loc[i * 2, 'Timestamp'] - primary_events.loc[i * 2, 'Timestamp']).total_seconds()
+            
+            if i + 1 < len(primary_events) // 2:
+                split_length_opposite_to_primary = (primary_events.loc[(i + 1) * 2, 'Timestamp'] - opposite_events.loc[i * 2, 'Timestamp']).total_seconds()
+            else:
+                split_length_opposite_to_primary = None  # Handle edge case   
 
-        # Calculate all red times
-        all_red_time_primary_to_opposite = split_length_primary_to_opposite - green_time_primary
-        results['All Red Time'].append({primary_direction: all_red_time_primary_to_opposite})
-        
-        if i + 1 < len(primary_events) // 2:
-            all_red_time_opposite_to_primary = split_length_opposite_to_primary - green_time_opposite
-            results['All Red Time'].append({opposite_direction: all_red_time_opposite_to_primary})
+            # Calculate green times
+            green_time_primary = (primary_events.loc[i * 2 + 1, 'Timestamp'] - primary_events.loc[i * 2, 'Timestamp']).total_seconds()
+            green_time_opposite = (opposite_events.loc[i * 2 + 1, 'Timestamp'] - opposite_events.loc[i * 2, 'Timestamp']).total_seconds()
 
-    return df, results
+            # Calculate red times
+            if cycle_length is not None:
+                red_time_primary = cycle_length - green_time_primary
+                red_time_opposite = cycle_length - green_time_opposite
+            else:
+                red_time_primary = red_time_opposite = None
+
+            # Calculate all red times
+            all_red_time_primary_to_opposite = split_length_primary_to_opposite - green_time_primary
+            if split_length_opposite_to_primary is not None:
+                all_red_time_opposite_to_primary = split_length_opposite_to_primary - green_time_opposite
+            else:
+                all_red_time_opposite_to_primary = None
+            
+            # Add data to the summary for the primary direction
+            cycle_summary['Start Time'].append(start_time)
+            cycle_summary['Cycle ID'].append(cycle_id)
+            cycle_summary['Direction'].append(primary_direction)
+            cycle_summary['Cycle Length'].append(cycle_length)
+            cycle_summary['Split Length'].append(split_length_primary_to_opposite)
+            cycle_summary['Green Time'].append(green_time_primary)
+            cycle_summary['Red Time'].append(red_time_primary)
+            cycle_summary['All Red Time'].append(all_red_time_primary_to_opposite)
+
+            # Add data to the summary for the opposite direction
+            cycle_summary['Start Time'].append(start_time)
+            cycle_summary['Cycle ID'].append(cycle_id)
+            cycle_summary['Direction'].append(opposite_direction)
+            cycle_summary['Cycle Length'].append(cycle_length)
+            cycle_summary['Split Length'].append(split_length_opposite_to_primary)
+            cycle_summary['Green Time'].append(green_time_opposite)
+            cycle_summary['Red Time'].append(red_time_opposite)
+            cycle_summary['All Red Time'].append(all_red_time_opposite_to_primary)
+
+        else:
+            # If data for a direction is missing, set values to NA (or None)
+            cycle_summary['Start Time'].append(start_time)
+            cycle_summary['Cycle ID'].append(cycle_id)
+            cycle_summary['Direction'].append(primary_direction)
+            cycle_summary['Cycle Length'].append(None)
+            cycle_summary['Split Length'].append(None)
+            cycle_summary['Green Time'].append(None)
+            cycle_summary['Red Time'].append(None)
+            cycle_summary['All Red Time'].append(None)
+
+            # Also append NA for the opposite direction
+            cycle_summary['Start Time'].append(start_time)
+            cycle_summary['Cycle ID'].append(cycle_id)
+            cycle_summary['Direction'].append(opposite_direction)
+            cycle_summary['Cycle Length'].append(None)
+            cycle_summary['Split Length'].append(None)
+            cycle_summary['Green Time'].append(None)
+            cycle_summary['Red Time'].append(None)
+            cycle_summary['All Red Time'].append(None)
+
+    # Create a summary DataFrame
+    summary_df = pd.DataFrame(cycle_summary)
+
+    return df, summary_df # df is the raw cycle data, results I also want to be a df (not a dictionary) and to be the summary table
 
 # --------------------------------------------------------------------------------------------------------------------------------------------
 # main
@@ -546,7 +601,7 @@ def process_cycles(data):
 
 # Specify the directory containing the Excel files
 directory = 'data'
-output_file = 'output/testing_gapsincycles.xlsx'
+output_file = 'output/testing_cycleproblems.xlsx'
 output_map = 'output/map.html'
 speed_limit = 45 # must be in mph
 
@@ -630,33 +685,9 @@ delay_df = pd.concat([delay_df.drop(['delay'], axis=1),
 # ---------------------------------------------
 
 # cycle length analysis, function returns the clean data and the results (I still need to organize). the output is a the raw data and a dictionary
-cycle_data, results = process_cycles(count_data)
+cycle_data, cycle_results = process_cycles(count_data)
 
-# Display the calculated times
-for key, values in results.items():
-    print(f"{key}:")
-    for value in values:
-        print(f"  {value}")
 
-# create data frames from dictionary
-cycle_length = pd.DataFrame(results['Cycle Length'], columns=['Cycle Length'])
-
-def write_dataframe_from_dictionary(dictionary, data):
-
-    # Initialize a dictionary to collect lists for each direction
-    data_dict = {}
-
-    # Populate the dictionary with the values from the dictionaries
-    for entry in data:
-        for direction, value in entry.items():
-            if direction not in data_dict:
-                data_dict[direction] = []
-            data_dict[direction].append(value)
-
-    # Create a DataFrame with dynamic columns based on the dictionary keys
-    dataframe = pd.DataFrame(data_dict)
-
-    return dataframe
 
 
 # --------------------------------------------------------------------------------------------------------------------------------------------
@@ -686,18 +717,20 @@ with pd.ExcelWriter(output_file, engine='xlsxwriter') as writer:
     gpx_data.to_excel(writer, sheet_name='GPX Data', index=False)
     cycle_data.drop(['TimeStamp', 'Hour', 'Timestamp'], axis=1, inplace=True)
     cycle_data.to_excel(writer, sheet_name='Cycle Data', index=False)
-    summary_counts.to_excel(writer, sheet_name='Count Summary', index=False)
-    headway_data.to_excel(writer, sheet_name='Headway Data', index=False)
-    headway_table.to_excel(writer, sheet_name='Headway Results', index=False)
-    headway_formatted.to_excel(writer, sheet_name='Headway Graphs', index=False)
     df_filtered.to_excel(writer, sheet_name='Travel Times Data', index=False)
+
+    summary_counts.to_excel(writer, sheet_name='Count Summary', index=False)
+    #headway_data.drop(['TimeStamp', 'Hour'], axis=1, inplace=True)
+    #headway_data.to_excel(writer, sheet_name='Headway Data', index=False)
+    headway_table.to_excel(writer, sheet_name='Headway Summary', index=False)
+    #headway_formatted.to_excel(writer, sheet_name='Headway Graphs', index=False)
     runs_df.to_excel(writer, sheet_name='Travel Times Table (sec)', index=False)
     delay_df.to_excel(writer, sheet_name='Delay Table (sec)', index=False)
-    cycle_length.to_excel(writer, sheet_name='Cycle Length', index=False)
+    cycle_results.to_excel(writer, sheet_name='Cycle Length', index=False)
 
 
 
 print(f"File was successfully written to '{output_file}'.")
 
 # Open the Excel file
-#os.system(f'start excel {output_file}')
+os.system(f'start excel {output_file}')
