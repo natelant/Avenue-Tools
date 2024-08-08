@@ -499,96 +499,91 @@ def process_cycles(data):
     primary_direction = df.iloc[0]['Direction']
     opposite_direction = df[df['Direction'] != primary_direction]['Direction'].iloc[0]
 
-    primary_events = df[df['Direction'] == primary_direction].reset_index(drop=True)
-    opposite_events = df[df['Direction'] == opposite_direction].reset_index(drop=True)
+    cycle_id = 0
 
-    num_cycles = min(len(primary_events) // 2, len(opposite_events) // 2)
+    # loop through the rows in the cycle data frame created above where i is each row.
+    # the perfect cycle is start stop start stop in both directions.
+    # in the case that one direction is skipped, this formula uses NA and moves on to the next cycle starting in the primary direction
+    # and I trust that the data cleaning up to this point guarantees at least a start stop pattern
+    for i in range(0, len(df), 2):
+        if (df.loc[i, 'Direction'] == primary_direction):
 
-    for i in range(num_cycles):
-        # Cycle ID for unique identification
-        cycle_id = i + 1
+            # Cycle ID for unique identification
+            cycle_id = cycle_id + 1
 
-        # Start time of the cycle
-        start_time = primary_events.loc[i * 2, 'Time Stamp']
+            # Start time of the cycle
+            start_time = df.loc[i, 'Time Stamp']
 
-        # Check if the necessary events are available for both directions
-        # makes sure that it goes primary direction, then opposite direction, then back to primary direction
-        if (df.loc[i * 2 + 4, 'Direction'] != opposite_direction):
-    
+            # Ensure i+2 and i+4 are within the valid range before accessing them
+            if i+2 < len(df) and i+4 < len(df):
+        
+                # Check that ith row is the primary direction and the (i+4)th row direction matches the ith row direction and that the (i+2)th direction is opposite direction
+                if (df.loc[i+2, 'Direction'] == opposite_direction and 
+                    df.loc[i+4, 'Direction'] == df.loc[i, 'Direction']):
 
-            # Calculate cycle length
-            if i + 1 < len(primary_events) // 2:
-                cycle_length = (primary_events.loc[(i + 1) * 2, 'Timestamp'] - primary_events.loc[i * 2, 'Timestamp']).total_seconds()
-                
-            else:
-                cycle_length = None  # Handle edge case
+                    # Calculate cycle length
+                    cycle_length = (df.loc[(i + 4), 'Timestamp'] - df.loc[i, 'Timestamp']).total_seconds()
+                        
+                    
+                    # Calculate split lengths
+                    split_length_primary_to_opposite = (df.loc[i+2, 'Timestamp'] - df.loc[i, 'Timestamp']).total_seconds()
+                    split_length_opposite_to_primary = (df.loc[i+4, 'Timestamp'] - df.loc[i+2, 'Timestamp']).total_seconds()
+                    
 
-            # Calculate split lengths
-            split_length_primary_to_opposite = (opposite_events.loc[i * 2, 'Timestamp'] - primary_events.loc[i * 2, 'Timestamp']).total_seconds()
-            
-            if i + 1 < len(primary_events) // 2:
-                split_length_opposite_to_primary = (primary_events.loc[(i + 1) * 2, 'Timestamp'] - opposite_events.loc[i * 2, 'Timestamp']).total_seconds()
-            else:
-                split_length_opposite_to_primary = None  # Handle edge case   
+                    # Calculate green times
+                    green_time_primary = (df.loc[i+1, 'Timestamp'] - df.loc[i, 'Timestamp']).total_seconds()
+                    green_time_opposite = (df.loc[i+3, 'Timestamp'] - df.loc[i+2, 'Timestamp']).total_seconds()
 
-            # Calculate green times
-            green_time_primary = (primary_events.loc[i * 2 + 1, 'Timestamp'] - primary_events.loc[i * 2, 'Timestamp']).total_seconds()
-            green_time_opposite = (opposite_events.loc[i * 2 + 1, 'Timestamp'] - opposite_events.loc[i * 2, 'Timestamp']).total_seconds()
+                    # Calculate red times
+                    red_time_primary = cycle_length - green_time_primary
+                    red_time_opposite = cycle_length - green_time_opposite
+                    
 
-            # Calculate red times
-            if cycle_length is not None:
-                red_time_primary = cycle_length - green_time_primary
-                red_time_opposite = cycle_length - green_time_opposite
-            else:
-                red_time_primary = red_time_opposite = None
+                    # Calculate all red times
+                    all_red_time_primary_to_opposite = split_length_primary_to_opposite - green_time_primary
+                    all_red_time_opposite_to_primary = split_length_opposite_to_primary - green_time_opposite
+                    
+                    
+                    # Add data to the summary for the primary direction
+                    cycle_summary['Start Time'].append(start_time)
+                    cycle_summary['Cycle ID'].append(cycle_id)
+                    cycle_summary['Direction'].append(primary_direction)
+                    cycle_summary['Cycle Length'].append(cycle_length)
+                    cycle_summary['Split Length'].append(split_length_primary_to_opposite)
+                    cycle_summary['Green Time'].append(green_time_primary)
+                    cycle_summary['Red Time'].append(red_time_primary)
+                    cycle_summary['All Red Time'].append(all_red_time_primary_to_opposite)
 
-            # Calculate all red times
-            all_red_time_primary_to_opposite = split_length_primary_to_opposite - green_time_primary
-            if split_length_opposite_to_primary is not None:
-                all_red_time_opposite_to_primary = split_length_opposite_to_primary - green_time_opposite
-            else:
-                all_red_time_opposite_to_primary = None
-            
-            # Add data to the summary for the primary direction
-            cycle_summary['Start Time'].append(start_time)
-            cycle_summary['Cycle ID'].append(cycle_id)
-            cycle_summary['Direction'].append(primary_direction)
-            cycle_summary['Cycle Length'].append(cycle_length)
-            cycle_summary['Split Length'].append(split_length_primary_to_opposite)
-            cycle_summary['Green Time'].append(green_time_primary)
-            cycle_summary['Red Time'].append(red_time_primary)
-            cycle_summary['All Red Time'].append(all_red_time_primary_to_opposite)
+                    # Add data to the summary for the opposite direction
+                    cycle_summary['Start Time'].append(start_time)
+                    cycle_summary['Cycle ID'].append(cycle_id)
+                    cycle_summary['Direction'].append(opposite_direction)
+                    cycle_summary['Cycle Length'].append(cycle_length)
+                    cycle_summary['Split Length'].append(split_length_opposite_to_primary)
+                    cycle_summary['Green Time'].append(green_time_opposite)
+                    cycle_summary['Red Time'].append(red_time_opposite)
+                    cycle_summary['All Red Time'].append(all_red_time_opposite_to_primary)
 
-            # Add data to the summary for the opposite direction
-            cycle_summary['Start Time'].append(start_time)
-            cycle_summary['Cycle ID'].append(cycle_id)
-            cycle_summary['Direction'].append(opposite_direction)
-            cycle_summary['Cycle Length'].append(cycle_length)
-            cycle_summary['Split Length'].append(split_length_opposite_to_primary)
-            cycle_summary['Green Time'].append(green_time_opposite)
-            cycle_summary['Red Time'].append(red_time_opposite)
-            cycle_summary['All Red Time'].append(all_red_time_opposite_to_primary)
+                else:
+                    # If data for a direction is missing, set values to NA (or None)
+                    cycle_summary['Start Time'].append(start_time)
+                    cycle_summary['Cycle ID'].append(cycle_id)
+                    cycle_summary['Direction'].append(primary_direction)
+                    cycle_summary['Cycle Length'].append(None)
+                    cycle_summary['Split Length'].append(None)
+                    cycle_summary['Green Time'].append(None)
+                    cycle_summary['Red Time'].append(None)
+                    cycle_summary['All Red Time'].append(None)
 
-        else:
-            # If data for a direction is missing, set values to NA (or None)
-            cycle_summary['Start Time'].append(start_time)
-            cycle_summary['Cycle ID'].append(cycle_id)
-            cycle_summary['Direction'].append(primary_direction)
-            cycle_summary['Cycle Length'].append(None)
-            cycle_summary['Split Length'].append(None)
-            cycle_summary['Green Time'].append(None)
-            cycle_summary['Red Time'].append(None)
-            cycle_summary['All Red Time'].append(None)
-
-            # Also append NA for the opposite direction
-            cycle_summary['Start Time'].append(start_time)
-            cycle_summary['Cycle ID'].append(cycle_id)
-            cycle_summary['Direction'].append(opposite_direction)
-            cycle_summary['Cycle Length'].append(None)
-            cycle_summary['Split Length'].append(None)
-            cycle_summary['Green Time'].append(None)
-            cycle_summary['Red Time'].append(None)
-            cycle_summary['All Red Time'].append(None)
+                    # Also append NA for the opposite direction
+                    cycle_summary['Start Time'].append(start_time)
+                    cycle_summary['Cycle ID'].append(cycle_id)
+                    cycle_summary['Direction'].append(opposite_direction)
+                    cycle_summary['Cycle Length'].append(None)
+                    cycle_summary['Split Length'].append(None)
+                    cycle_summary['Green Time'].append(None)
+                    cycle_summary['Red Time'].append(None)
+                    cycle_summary['All Red Time'].append(None)
 
     # Create a summary DataFrame
     summary_df = pd.DataFrame(cycle_summary)
