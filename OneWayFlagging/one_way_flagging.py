@@ -161,7 +161,7 @@ def visualize_headway(df):
                 # labels={'Time Stamp': 'Time Stamp', 'Headway': 'Headway (seconds)'},
                 hover_data={'Time Stamp': True, 'Headway': True, 'Group': True, 'Timestamp': False},
                 color='Direction',  # Color bars by vehicle classification
-                color_discrete_map={'EB': 'purple', 'WB': 'pink', 'NB': 'Orange', 'SB': 'blue'})  # Example color mapping
+                color_discrete_map={'EB': 'Black', 'WB': 'DarkRed', 'NB': 'DarkBlue', 'SB': 'DarkGreen'})  # Example color mapping
 
     # Add vertical lines for 'start' and 'stop'
     for _, row in data.iterrows():
@@ -170,10 +170,9 @@ def visualize_headway(df):
         elif row['Vehicle'] == 'Stop':
             fig.add_vline(x=row['Timestamp'], line=dict(color='red', width=2))
 
-    # this solves the problem of looking faded. Something to do with the lines in between the bars. Going to be rough when I introduce a second direction
-    fig.update_traces(marker_color='blue',
-                      marker_line_color='blue',
-                      selector=dict(type="bar"))
+    # Adjust the bar thickness by setting bargap
+    fig.update_layout(bargap=0.1)  # Adjust this value to control the gap between bars
+
     return fig
 
 def format_headway(data):
@@ -547,7 +546,7 @@ def process_cycles(data):
 
 # Specify the directory containing the Excel files
 directory = 'data'
-output_file = 'output/testing_cycles.xlsx'
+output_file = 'output/testing_gapsincycles.xlsx'
 output_map = 'output/map.html'
 speed_limit = 45 # must be in mph
 
@@ -557,6 +556,20 @@ summary_counts = summarize_counts(count_data)
 
 # Add headway to count_data
 headway_data = calculate_headway(count_data)
+
+# make summary table
+# Aggregate functions
+agg_functions = {
+    'Count': np.size,
+    'Average': np.mean,
+    '85th Percentile': lambda x: np.percentile(x, 85),
+    'Max': np.max
+}
+
+# Filter out specific vehicle types
+filtered_headway = headway_data.loc[~headway_data['Vehicle'].isin(['Start', 'Stop'])]
+# Group by Direction and VehicleType, apply aggregation functions
+headway_table = filtered_headway.groupby(['Direction', 'Vehicle'])['Headway'].agg(**agg_functions).reset_index()
 
 # format headway data for excel
 headway_formatted = format_headway(headway_data)
@@ -616,7 +629,7 @@ delay_df = pd.concat([delay_df.drop(['delay'], axis=1),
 # plt.show()
 # ---------------------------------------------
 
-# cycle length analysis, function returns the clean data and the results (I still need to organize)
+# cycle length analysis, function returns the clean data and the results (I still need to organize). the output is a the raw data and a dictionary
 cycle_data, results = process_cycles(count_data)
 
 # Display the calculated times
@@ -625,7 +638,25 @@ for key, values in results.items():
     for value in values:
         print(f"  {value}")
 
+# create data frames from dictionary
+cycle_length = pd.DataFrame(results['Cycle Length'], columns=['Cycle Length'])
 
+def write_dataframe_from_dictionary(dictionary, data):
+
+    # Initialize a dictionary to collect lists for each direction
+    data_dict = {}
+
+    # Populate the dictionary with the values from the dictionaries
+    for entry in data:
+        for direction, value in entry.items():
+            if direction not in data_dict:
+                data_dict[direction] = []
+            data_dict[direction].append(value)
+
+    # Create a DataFrame with dynamic columns based on the dictionary keys
+    dataframe = pd.DataFrame(data_dict)
+
+    return dataframe
 
 
 # --------------------------------------------------------------------------------------------------------------------------------------------
@@ -657,16 +688,16 @@ with pd.ExcelWriter(output_file, engine='xlsxwriter') as writer:
     cycle_data.to_excel(writer, sheet_name='Cycle Data', index=False)
     summary_counts.to_excel(writer, sheet_name='Count Summary', index=False)
     headway_data.to_excel(writer, sheet_name='Headway Data', index=False)
-    # headway results .to_excel(writer, sheet_name='Headway Results', index=False)
+    headway_table.to_excel(writer, sheet_name='Headway Results', index=False)
     headway_formatted.to_excel(writer, sheet_name='Headway Graphs', index=False)
     df_filtered.to_excel(writer, sheet_name='Travel Times Data', index=False)
     runs_df.to_excel(writer, sheet_name='Travel Times Table (sec)', index=False)
     delay_df.to_excel(writer, sheet_name='Delay Table (sec)', index=False)
-    #results_df.to_excel(writer, sheet_name='Cycles...', index=False)
+    cycle_length.to_excel(writer, sheet_name='Cycle Length', index=False)
 
 
 
 print(f"File was successfully written to '{output_file}'.")
 
 # Open the Excel file
-os.system(f'start excel {output_file}')
+#os.system(f'start excel {output_file}')
