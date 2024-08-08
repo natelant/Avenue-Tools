@@ -19,6 +19,7 @@ import os
 from datetime import datetime, time
 import plotly.express as px
 import plotly.graph_objects as go
+import plotly.io as pio
 import numpy as np
 import xml.etree.ElementTree as ET
 import pytz
@@ -35,6 +36,25 @@ LOCAL_TZ = pytz.timezone('America/Denver')
 # --------------------------------------------------------------------------------------------------------------------------------------------
 # functions
 # --------------------------------------------------------------------------------------------------------------------------------------------
+
+def print_ascii_art():
+    
+    Fire = [
+        
+        r'                       )                       )     )  (    (     ',
+        r'   (                ( /(              *   ) ( /(  ( /(  )\ ) )\ )  ',
+        r'   )\    (   (  (   )\())   (  (    ` )  /( )\()) )\())(()/((()/(  ',
+        r'((((_)(  )\  )\ )\ ((_)\    )\ )\    ( )(_)|(_)\ ((_)\  /(_))/(_)) ',
+        r' )\ _ )\((_)((_|(_) _((_)_ ((_|(_)  (_(_())  ((_)  ((_)(_)) (_))   ',
+        r' (_)_\(_) \ / /| __| \| | | | | __| |_   _| / _ \ / _ \| |  / __|  ',
+        r'  / _ \  \ V / | _|| .` | |_| | _|    | |  | (_) | (_) | |__\__ \  ',
+        r' /_/ \_\  \_/  |___|_|\_|\___/|___|   |_|   \___/ \___/|____|___/  '
+                                                                   
+
+    ]
+
+    for line in Fire:
+        print(line)
 
 # function that cleans the excel files
 def clean_xlsm(filename):
@@ -88,6 +108,7 @@ def readin_counts(file_path):
     for filename in os.listdir(file_path):
         if filename.endswith(".xlsm"):
             # run clean function
+            print(f'Processing file: {filename}')
             clean_df = clean_xlsm(filename)
             # Append the dataframe to the list
             df_list.append(clean_df)
@@ -594,138 +615,117 @@ def process_cycles(data):
 # main
 # --------------------------------------------------------------------------------------------------------------------------------------------
 
-# Specify the directory containing the Excel files
-directory = 'data'
-output_file = 'output/testing_cycleproblems.xlsx'
-output_map = 'output/map.html'
-speed_limit = 45 # must be in mph
+if __name__ == "__main__":
 
-# Read in, clean and combine .xlsm -> count_data
-count_data = readin_counts(directory)
-summary_counts = summarize_counts(count_data)
+    print_ascii_art()
 
-# Add headway to count_data
-headway_data = calculate_headway(count_data)
+    # Instructions ---
 
-# make summary table
-# Aggregate functions
-agg_functions = {
-    'Count': np.size,
-    'Average': np.mean,
-    '85th Percentile': lambda x: np.percentile(x, 85),
-    'Max': np.max
-}
+    # Specify the directory containing the Excel files
+    directory = input("Enter the folder path containing the data: ").strip()
+    output_file = input("Where do you want to save your data (i.e. 'output/mydata.xlsx'): ").strip()
+    # Check if the file path ends with '.xlsx'
+    if not output_file.lower().endswith('.xlsx'):
+        print("Error: The file must be an Excel sheet with the .xlsx extension.")
+    headway_visualization = input("Where do you want to save your visualization file (i.e. 'output/myvisualization.html'): ").strip()
+    output_map = input("Where do you want to save your map (i.e. 'output/map.html'): ").strip()
+    speed_limit_str = input("What is the speed limit (mph): ").strip()
+    speed_limit = int(speed_limit_str)
 
-# Filter out specific vehicle types
-filtered_headway = headway_data.loc[~headway_data['Vehicle'].isin(['Start', 'Stop'])]
-# Group by Direction and VehicleType, apply aggregation functions
-headway_table = filtered_headway.groupby(['Direction', 'Vehicle'])['Headway'].agg(**agg_functions).reset_index()
+    # Read in, clean and combine .xlsm -> count_data
+    count_data = readin_counts(directory)
+    summary_counts = summarize_counts(count_data)
 
-# format headway data for excel
-headway_formatted = format_headway(headway_data)
+    # Add headway to count_data
+    headway_data = calculate_headway(count_data)
 
-# Visualize headway - make sure the data is clean
-my_headway = visualize_headway(headway_data)
-my_headway.show()
+    # make summary table
+    # Aggregate functions
+    agg_functions = {
+        'Count': np.size,
+        'Average': np.mean,
+        '85th Percentile': lambda x: np.percentile(x, 85),
+        'Max': np.max
+    }
 
+    # Filter out specific vehicle types
+    filtered_headway = headway_data.loc[~headway_data['Vehicle'].isin(['Start', 'Stop'])]
+    # Group by Direction and VehicleType, apply aggregation functions
+    headway_table = filtered_headway.groupby(['Direction', 'Vehicle'])['Headway'].agg(**agg_functions).reset_index()
 
-# Read in .gpx -> gpx_data as a df
-gpx_data = readin_gpx(directory)
+    # format headway data for excel
+    headway_formatted = format_headway(headway_data)
 
-
-
-
-# Calculate Travel times
-# parse KML output as json
-key_intersections = parse_kml(directory)
-
-
-# write GPX to a map.html and include the KML points (input as json)
-plot_data_on_map(gpx_data, output_map, key_intersections)
-
-# join with GPX and calculate travel times
-# ------------------------------------------
-travel_times = process_travel_times(directory, key_intersections, speed_limit)
+    # Visualize headway - make sure the data is clean
+    my_headway = visualize_headway(headway_data)
+    # Save the figure as an HTML file
+    pio.write_html(my_headway, file = headway_visualization, auto_open=False)  # auto_open=True will open the file in a browser automatically
 
 
-# Remove rows with travel_time equal to 0.0
-df_filtered = travel_times[travel_times['travel_time (sec)'] != 0.0]
 
-# Group by route_ID and create columns for each run
-runs_df = df_filtered.groupby('route_ID')['travel_time (sec)'].apply(list).reset_index()
-delay_df = df_filtered.groupby('route_ID')['delay'].apply(list).reset_index()
-
-# Split the travel_time list into separate columns
-max_runs = runs_df['travel_time (sec)'].apply(len).max()
-runs_df = pd.concat([runs_df.drop(['travel_time (sec)'], axis=1), 
-                     pd.DataFrame(runs_df['travel_time (sec)'].to_list(), columns=[f'Run {i+1}' for i in range(max_runs)])], axis=1)
-
-delay_df = pd.concat([delay_df.drop(['delay'], axis=1), 
-                     pd.DataFrame(delay_df['delay'].to_list(), columns=[f'Run {i+1}' for i in range(max_runs)])], axis=1)
-
-
-# # Melt the DataFrame for visualization
-# melted_df = runs_df.melt(id_vars=['route_ID'], value_vars=[f'Run {i+1}' for i in range(max_runs)], 
-#                          var_name='Run', value_name='travel_time').dropna()
-
-# # Plotting with matplotlib
-# plt.figure(figsize=(12, 6))
-# melted_df.boxplot(column='travel_time', by='route_ID', grid=False)
-# plt.title('Travel Times for Each Route ID')
-# plt.suptitle('')  # Remove the default title to avoid overlapping
-# plt.xlabel('Route ID')
-# plt.ylabel('Travel Time (seconds)')
-# plt.xticks(rotation=45)
-# plt.show()
-# ---------------------------------------------
-
-# cycle length analysis, function returns the clean data and the results (I still need to organize). the output is a the raw data and a dictionary
-cycle_data, cycle_results = process_cycles(count_data)
+    # Read in .gpx -> gpx_data as a df
+    gpx_data = readin_gpx(directory)
 
 
 
 
-# --------------------------------------------------------------------------------------------------------------------------------------------
-# Output
-# --------------------------------------------------------------------------------------------------------------------------------------------
+    # Calculate Travel times
+    # parse KML output as json
+    key_intersections = parse_kml(directory)
 
-# Write excel ouptut file ---
-# Sheet 1 - raw count data (Time Stamp, Vehicle, Direction)
-# Sheet 2 - raw gpx data (Time Stamp, lat, lon, speed, grade)
-# Sheet 3 - Hourly summary table (Direction: Hourly Volume, classification, 
-# Sheet 4 - headway data (Truck, Car) or (Truck following Truck, Truck following Car, Car Following Car, Car Following Truck) - for histograms and box plots
-#           average headway - exclude first car/truck
-# Sheet 5 - Runs travel times data (Run, Route, direction, avg speed, distance, travel time, stops, grade) start time (to link to hour...)
-# Sheet  5... Runs summary (From GPX data)
-## Sheet 6 - Cycle summary (Run, total run time, green time, red time, all red time, ) 
-# Sheet 7 - start up loss time?
-# Sheet REGRESSION... master data, selective data?
 
-# HOURLY Delay = actual Travel time - expected travel time (inside the max queue zone)
+    # write GPX to a map.html and include the KML points (input as json)
+    plot_data_on_map(gpx_data, output_map, key_intersections)
 
-# # Create an Excel writer
-with pd.ExcelWriter(output_file, engine='xlsxwriter') as writer:
-    # Write the data tables to sheets in order
-    count_data.drop(['TimeStamp', 'Hour', 'Timestamp'], axis=1, inplace=True)
-    count_data.to_excel(writer, sheet_name='Vehicle Count Data', index=False)
-    gpx_data.drop('SpeedCategory', axis=1, inplace=True)
-    gpx_data.to_excel(writer, sheet_name='GPX Data', index=False)
-    cycle_data.drop(['TimeStamp', 'Hour', 'Timestamp'], axis=1, inplace=True)
-    cycle_data.to_excel(writer, sheet_name='Cycle Data', index=False)
-    df_filtered.to_excel(writer, sheet_name='Travel Times Data', index=False)
+    # join with GPX and calculate travel times
+    # ------------------------------------------
+    travel_times = process_travel_times(directory, key_intersections, speed_limit)
 
-    summary_counts.to_excel(writer, sheet_name='Count Summary', index=False)
-    #headway_data.drop(['TimeStamp', 'Hour'], axis=1, inplace=True)
-    #headway_data.to_excel(writer, sheet_name='Headway Data', index=False)
-    headway_table.to_excel(writer, sheet_name='Headway Summary', index=False)
-    #headway_formatted.to_excel(writer, sheet_name='Headway Graphs', index=False)
-    runs_df.to_excel(writer, sheet_name='Travel Times Table (sec)', index=False)
-    delay_df.to_excel(writer, sheet_name='Delay Table (sec)', index=False)
-    cycle_results.to_excel(writer, sheet_name='Cycle Length', index=False)
+
+    # Remove rows with travel_time equal to 0.0
+    df_filtered = travel_times[travel_times['travel_time (sec)'] != 0.0]
+
+    # Group by route_ID and create columns for each run
+    runs_df = df_filtered.groupby('route_ID')['travel_time (sec)'].apply(list).reset_index()
+    delay_df = df_filtered.groupby('route_ID')['delay'].apply(list).reset_index()
+
+    # Split the travel_time list into separate columns
+    max_runs = runs_df['travel_time (sec)'].apply(len).max()
+    runs_df = pd.concat([runs_df.drop(['travel_time (sec)'], axis=1), 
+                        pd.DataFrame(runs_df['travel_time (sec)'].to_list(), columns=[f'Run {i+1}' for i in range(max_runs)])], axis=1)
+
+    delay_df = pd.concat([delay_df.drop(['delay'], axis=1), 
+                        pd.DataFrame(delay_df['delay'].to_list(), columns=[f'Run {i+1}' for i in range(max_runs)])], axis=1)
+
+
+    # cycle length analysis, function returns the clean data and the results (I still need to organize). the output is a the raw data and a dictionary
+    cycle_data, cycle_results = process_cycles(count_data)
 
 
 
-print(f"File was successfully written to '{output_file}'.")
+    # # Create an Excel writer
+    with pd.ExcelWriter(output_file, engine='xlsxwriter') as writer:
+        # Write the data tables to sheets in order
+        count_data.drop(['TimeStamp', 'Hour', 'Timestamp'], axis=1, inplace=True)
+        count_data.to_excel(writer, sheet_name='Vehicle Count Data', index=False)
+        gpx_data.drop('SpeedCategory', axis=1, inplace=True)
+        gpx_data.to_excel(writer, sheet_name='GPX Data', index=False)
+        cycle_data.drop(['TimeStamp', 'Hour', 'Timestamp'], axis=1, inplace=True)
+        cycle_data.to_excel(writer, sheet_name='Cycle Data', index=False)
+        df_filtered.to_excel(writer, sheet_name='Travel Times Data', index=False)
 
-# Open the Excel file
-os.system(f'start excel {output_file}')
+        summary_counts.to_excel(writer, sheet_name='Count Summary', index=False)
+        #headway_data.drop(['TimeStamp', 'Hour'], axis=1, inplace=True)
+        #headway_data.to_excel(writer, sheet_name='Headway Data', index=False)
+        headway_table.to_excel(writer, sheet_name='Headway Summary', index=False)
+        #headway_formatted.to_excel(writer, sheet_name='Headway Graphs', index=False)
+        runs_df.to_excel(writer, sheet_name='Travel Times Table (sec)', index=False)
+        delay_df.to_excel(writer, sheet_name='Delay Table (sec)', index=False)
+        cycle_results.to_excel(writer, sheet_name='Cycle Length', index=False)
+
+
+
+    print(f"File was successfully written to '{output_file}'.")
+
+    # Open the Excel file
+    os.system(f'start excel {output_file}')
