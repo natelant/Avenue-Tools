@@ -1,0 +1,10 @@
+pandas
+matplotlib
+numpy
+mplcursors
+plotly
+geopandas
+folium
+pytz
+gpxpy
+fastkml

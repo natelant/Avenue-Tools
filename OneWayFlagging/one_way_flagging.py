@@ -278,7 +278,7 @@ def parse_gpx(file_path):
         previous_time = time_of_day_local
         previous_elevation = elevation
     
-    df = pd.DataFrame(data, columns=['TimeOfDay', 'Latitude', 'Longitude', 'Distance', 'Speed', 'Speed (mph)', 'Elevation', 'Grade (%)'])
+    df = pd.DataFrame(data, columns=['TimeOfDay', 'Latitude', 'Longitude', 'Distance (m)', 'Speed', 'Speed (mph)', 'Elevation', 'Grade (%)'])
 
     bins = [-float('inf'), 3, 15, 30, float('inf')]
     labels = ['Below 3 mph', '3-15 mph', '15-30 mph', 'Above 30 mph']
@@ -464,6 +464,7 @@ def process_travel_times(folder, intersections, speed_limit_mph):
                     'segment_start': prev_intersection['segment_id'],
                     'segment_finish': closest_intersection['segment_id'],
                     'total_distance (mi)': cumulative_distance * 0.000621371,
+                    'speed_limit (mph)': speed_limit_mph,
                     'average_speed (mph)': average_speed,
                     'travel_time (sec)': travel_time,
                     'expected_travel_time': expected_travel_time,
@@ -620,15 +621,23 @@ if __name__ == "__main__":
     print_ascii_art()
 
     # Instructions ---
-
+    
     # Specify the directory containing the Excel files
     directory = input("Enter the folder path containing the data: ").strip()
-    output_file = input("Where do you want to save your data (i.e. 'output/mydata.xlsx'): ").strip()
-    # Check if the file path ends with '.xlsx'
-    if not output_file.lower().endswith('.xlsx'):
-        print("Error: The file must be an Excel sheet with the .xlsx extension.")
-    headway_visualization = input("Where do you want to save your visualization file (i.e. 'output/myvisualization.html'): ").strip()
-    output_map = input("Where do you want to save your map (i.e. 'output/map.html'): ").strip()
+    # Extract the folder name from the path
+    folder_name = os.path.basename(os.path.normpath(directory))
+    # Define the output folder path
+    output_folder = os.path.join(directory, "Output")
+
+    # Create the Output folder if it doesn't exist
+    if not os.path.exists(output_folder):
+        os.makedirs(output_folder)
+
+    # Create the output data file name by appending .xlsx to the folder name
+    output_file = os.path.join(output_folder, f"{folder_name}.xlsx")
+    print(f"The output file will be saved as: {output_file}")
+    headway_visualization = os.path.join(output_folder, f"{folder_name}_timeline.html")
+    output_map = os.path.join(output_folder, f"{folder_name}_map.html")
     speed_limit_str = input("What is the speed limit (mph): ").strip()
     speed_limit = int(speed_limit_str)
 
@@ -642,10 +651,10 @@ if __name__ == "__main__":
     # make summary table
     # Aggregate functions
     agg_functions = {
-        'Count': np.size,
-        'Average': np.mean,
+        'Count': 'size',
+        'Average': 'mean',
         '85th Percentile': lambda x: np.percentile(x, 85),
-        'Max': np.max
+        'Max': 'max'
     }
 
     # Filter out specific vehicle types
@@ -708,7 +717,7 @@ if __name__ == "__main__":
         # Write the data tables to sheets in order
         count_data.drop(['TimeStamp', 'Hour', 'Timestamp'], axis=1, inplace=True)
         count_data.to_excel(writer, sheet_name='Vehicle Count Data', index=False)
-        gpx_data.drop('SpeedCategory', axis=1, inplace=True)
+        gpx_data.drop(['Speed', 'SpeedCategory'], axis=1, inplace=True)
         gpx_data.to_excel(writer, sheet_name='GPX Data', index=False)
         cycle_data.drop(['TimeStamp', 'Hour', 'Timestamp'], axis=1, inplace=True)
         cycle_data.to_excel(writer, sheet_name='Cycle Data', index=False)

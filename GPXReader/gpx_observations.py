@@ -228,7 +228,7 @@ def main(gpx_folder, kml_file):
 # Run the inputs
 # File or Folder?
 # gpx_file = 'data/5400_pm.gpx'
-gpx_folder = 'GPXReader/data/US191'
+gpx_folder = 'GPXReader/data/SR7'
 kml_file = 'GPXReader/data/5400 S intersections.kml'
-map_output = 'GPXReader/output/US191.html'
+map_output = 'GPXReader/output/US7.html'
 main(gpx_folder, kml_file)
