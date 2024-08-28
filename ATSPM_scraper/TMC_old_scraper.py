@@ -53,19 +53,29 @@ async def fetch_data(session, intersection_id, date_str):
         "ShowDataTable": True
     }
 
-    max_retries = 3
+    max_retries = 6
     retry_delay = 30
 
     for attempt in range(max_retries):
         try:
             async with session.post(url, headers=headers, json=payload) as response:
                 if response.status == 200:
-                    return await response.text()
+                    content = await response.text()
+                    if any(error in content for error in [
+                        "Object reference not set to an instance of an object",
+                        "An error occurred while executing the command definition",
+                        "The underlying provider failed on Open",
+                        "Invalid attempt to read when no data is present"
+                    ]):
+                        print(f"Error message received. Retrying... (Attempt {attempt + 1}/{max_retries})")
+                        await asyncio.sleep(retry_delay)
+                        continue
+                    return content
                 else:
-                    print(f"Request failed with status code {response.status}")
-                    return None
+                    print(f"Request failed with status code {response.status}. Retrying... (Attempt {attempt + 1}/{max_retries})")
+                    await asyncio.sleep(retry_delay)
         except aiohttp.ClientError as e:
-            print(f"Request error: {e}")
+            print(f"Request error: {e}. Retrying... (Attempt {attempt + 1}/{max_retries})")
             await asyncio.sleep(retry_delay)
     
     print(f"Failed to get a successful response after {max_retries} attempts")

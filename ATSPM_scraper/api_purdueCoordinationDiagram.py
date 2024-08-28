@@ -2,6 +2,8 @@ import requests
 import json
 import sqlite3
 from datetime import datetime, date
+import pandas as pd
+from datetime import datetime, timedelta
 
 # Add this function at the beginning of your script
 def adapt_date(val):
@@ -21,9 +23,23 @@ headers = {
     # Add other headers you might need
 }
 
-# List of location identifiers and start dates
-location_identifiers = ["7157", "7158", "7159"]  # Add more as needed
-start_dates = ["2024-08-21", "2024-08-22", "2024-08-23"]  # Add more as needed
+# # List of location identifiers and start dates
+# location_identifiers = ["7157", "7158", "7159"]  # Add more as needed
+# start_dates = ["2024-08-21", "2024-08-22", "2024-08-23"]  # Add more as needed
+
+# Read location identifiers from signals.csv
+signals_df = pd.read_csv('data/signals.csv')
+location_identifiers = signals_df['Signal_ID'].astype(str).tolist()
+
+# Create a date range for start dates
+start_date = datetime(2024, 8, 1)  # Adjust this to your desired start date
+end_date = datetime(2024, 8, 27)  # Adjust this to your desired end date
+date_range = pd.date_range(start=start_date, end=end_date, freq='D')
+start_dates = [date.strftime('%Y-%m-%d') for date in date_range]
+
+print(f"Number of locations: {len(location_identifiers)}")
+print(f"Date range: {start_dates[0]} to {start_dates[-1]}")
+
 
 for location in location_identifiers:
     for start_date in start_dates:
@@ -88,7 +104,7 @@ for location in location_identifiers:
 
             # Insert data (reuse your existing insertion code here)
             for phase in data:
-                cursor.execute('''INSERT INTO phases 
+                cursor.execute('''INSERT OR IGNORE INTO phases 
                     (phase_number, phase_description, location_identifier, location_description, 
                     total_on_green_events, total_detector_hits, percent_arrival_on_green, date) 
                     VALUES (?, ?, ?, ?, ?, ?, ?, ?)''',
@@ -99,14 +115,14 @@ for location in location_identifiers:
                 phase_id = phase['phaseNumber']
 
                 for plan in phase['plans']:
-                    cursor.execute('''INSERT INTO plans 
+                    cursor.execute('''INSERT OR IGNORE INTO plans 
                         (phase_id, location_identifier, percent_green_time, percent_arrival_on_green, platoon_ratio, plan_number, start, end, plan_description) 
                         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)''',
                         (phase_id, location, plan['percentGreenTime'], plan['percentArrivalOnGreen'], plan['platoonRatio'],
                         plan['planNumber'], plan['start'], plan['end'], plan['planDescription']))
 
                 for volume in phase['volumePerHour']:
-                    cursor.execute('''INSERT INTO volume_per_hour 
+                    cursor.execute('''INSERT OR IGNORE INTO volume_per_hour 
                         (phase_id, location_identifier, value, timestamp) 
                         VALUES (?, ?, ?, ?)''',
                         (phase_id, location, volume['value'], volume['timestamp']))
