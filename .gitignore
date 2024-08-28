@@ -15,3 +15,5 @@ output/
 *.html
 *.pdf
 *.png
+*.kml
+*.gpx
