@@ -1,7 +1,14 @@
 import requests
 import json
 import sqlite3
-from datetime import datetime
+from datetime import datetime, date
+
+# Add this function at the beginning of your script
+def adapt_date(val):
+    return val.isoformat()
+
+# Register the adapter
+sqlite3.register_adapter(date, adapt_date)
 
 # Replace with the URL you found in the developer console
 url = 'https://report-api-bdppc3riba-wm.a.run.app/v1/PurdueCoordinationDiagram/GetReportData'
@@ -14,94 +21,102 @@ headers = {
     # Add other headers you might need
 }
 
-# If it's a POST request, include the data or payload
-payload = {
-    "locationIdentifier": "7157",
-    "start": "2024-08-21T00:00:00",
-    "end": "2024-08-21T23:59:00",
-    "binSize": "15",
-    "showPlanStatistics": True,  # Use True/False instead of 'true'/'false'
-    "showVolumes": True,
-    "showArrivalsOnGreen": True
-}
+# List of location identifiers and start dates
+location_identifiers = ["7157", "7158", "7159"]  # Add more as needed
+start_dates = ["2024-08-21", "2024-08-22", "2024-08-23"]  # Add more as needed
 
-# Convert the payload to a JSON string
-response = requests.post(url, headers=headers, data=json.dumps(payload))
+for location in location_identifiers:
+    for start_date in start_dates:
+        # Construct start and end datetime strings
+        start = f"{start_date}T00:00:00"
+        end = f"{start_date}T23:59:59"
 
-# Check if the request was successful
-if response.status_code == 200:
-    data = response.json()  # Assuming the response is JSON
-    
-    # Save data as JSON file
-    with open('purdue_coordination_data.json', 'w') as json_file:
-        json.dump(data, json_file, indent=4)
-    print("Data successfully saved as JSON file.")
+        payload = {
+            "locationIdentifier": location,
+            "start": start,
+            "end": end,
+            "binSize": "15",
+            "showPlanStatistics": True,
+            "showVolumes": True,
+            "showArrivalsOnGreen": True
+        }
 
-    # Connect to SQLite database (or create it if it doesn't exist)
-    conn = sqlite3.connect('purdue_coordination_diagram.db')
-    cursor = conn.cursor()
-    
-    # Create tables
-    cursor.execute('''CREATE TABLE IF NOT EXISTS phases (
-        phase_number INTEGER PRIMARY KEY,
-        phase_description TEXT,
-        total_on_green_events INTEGER,
-        total_detector_hits INTEGER,
-        percent_arrival_on_green INTEGER,
-        date DATE
-    )''')
+        # Convert the payload to a JSON string
+        response = requests.post(url, headers=headers, data=json.dumps(payload))
 
-    cursor.execute('''CREATE TABLE IF NOT EXISTS plans (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        phase_id INTEGER,
-        percent_green_time INTEGER,
-        percent_arrival_on_green INTEGER,
-        platoon_ratio REAL,
-        plan_number TEXT,
-        start DATETIME,
-        end DATETIME,
-        plan_description TEXT,
-        FOREIGN KEY (phase_id) REFERENCES phases(phase_number)
-    )''')
+        # Check if the request was successful
+        if response.status_code == 200:
+            data = response.json()
+            
+            # Connect to SQLite database
+            conn = sqlite3.connect('data/purdue_coordination_diagram.db', detect_types=sqlite3.PARSE_DECLTYPES)
+            cursor = conn.cursor()
+            
+            # Create tables with primary keys (if they don't exist)
+            cursor.execute('''CREATE TABLE IF NOT EXISTS phases
+                (id INTEGER PRIMARY KEY AUTOINCREMENT,
+                 phase_number INTEGER,
+                 phase_description TEXT,
+                 location_identifier TEXT,
+                 location_description TEXT,
+                 total_on_green_events INTEGER,
+                 total_detector_hits INTEGER,
+                 percent_arrival_on_green REAL,
+                 date DATE,
+                 UNIQUE(phase_number, location_identifier, date))''')
 
-    cursor.execute('''CREATE TABLE IF NOT EXISTS volume_per_hour (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        phase_id INTEGER,
-        value INTEGER,
-        timestamp DATETIME,
-        FOREIGN KEY (phase_id) REFERENCES phases(phase_number)
-    )''')
+            cursor.execute('''CREATE TABLE IF NOT EXISTS plans
+                (id INTEGER PRIMARY KEY AUTOINCREMENT,
+                 phase_id INTEGER,
+                 location_identifier TEXT,
+                 percent_green_time REAL,
+                 percent_arrival_on_green REAL,
+                 platoon_ratio REAL,
+                 plan_number INTEGER,
+                 start DATETIME,
+                 end DATETIME,
+                 plan_description TEXT,
+                 FOREIGN KEY(phase_id) REFERENCES phases(phase_number))''')
 
-    # Insert data
-    for phase in data:
-        cursor.execute('''INSERT OR REPLACE INTO phases 
-            (phase_number, phase_description, total_on_green_events, total_detector_hits, percent_arrival_on_green, date) 
-            VALUES (?, ?, ?, ?, ?, ?)''',
-            (phase['phaseNumber'], phase['phaseDescription'], phase['totalOnGreenEvents'],
-            phase['totalDetectorHits'], phase['percentArrivalOnGreen'], 
-            datetime.strptime(phase['plans'][0]['start'], '%Y-%m-%dT%H:%M:%S').date()))
-        
-        phase_id = phase['phaseNumber']
+            cursor.execute('''CREATE TABLE IF NOT EXISTS volume_per_hour
+                (id INTEGER PRIMARY KEY AUTOINCREMENT,
+                 phase_id INTEGER,
+                 location_identifier TEXT,
+                 value INTEGER,
+                 timestamp DATETIME,
+                 FOREIGN KEY(phase_id) REFERENCES phases(phase_number))''')
 
-        for plan in phase['plans']:
-            cursor.execute('''INSERT INTO plans 
-                (phase_id, percent_green_time, percent_arrival_on_green, platoon_ratio, plan_number, start, end, plan_description) 
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?)''',
-                (phase_id, plan['percentGreenTime'], plan['percentArrivalOnGreen'], plan['platoonRatio'],
-                plan['planNumber'], plan['start'], plan['end'], plan['planDescription']))
+            # Insert data (reuse your existing insertion code here)
+            for phase in data:
+                cursor.execute('''INSERT INTO phases 
+                    (phase_number, phase_description, location_identifier, location_description, 
+                    total_on_green_events, total_detector_hits, percent_arrival_on_green, date) 
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?)''',
+                    (phase['phaseNumber'], phase['phaseDescription'], location, phase['locationDescription'],
+                    phase['totalOnGreenEvents'], phase['totalDetectorHits'], phase['percentArrivalOnGreen'], 
+                    datetime.strptime(phase['plans'][0]['start'], '%Y-%m-%dT%H:%M:%S').date()))
+                
+                phase_id = phase['phaseNumber']
 
-        for volume in phase['volumePerHour']:
-            cursor.execute('''INSERT INTO volume_per_hour 
-                (phase_id, value, timestamp) 
-                VALUES (?, ?, ?)''',
-                (phase_id, volume['value'], volume['timestamp']))
+                for plan in phase['plans']:
+                    cursor.execute('''INSERT INTO plans 
+                        (phase_id, location_identifier, percent_green_time, percent_arrival_on_green, platoon_ratio, plan_number, start, end, plan_description) 
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)''',
+                        (phase_id, location, plan['percentGreenTime'], plan['percentArrivalOnGreen'], plan['platoonRatio'],
+                        plan['planNumber'], plan['start'], plan['end'], plan['planDescription']))
 
-    conn.commit()
-    conn.close()
-    
-    print("Data successfully stored in the database.")
-else:
-    print(f"Request failed with status code {response.status_code}")
+                for volume in phase['volumePerHour']:
+                    cursor.execute('''INSERT INTO volume_per_hour 
+                        (phase_id, location_identifier, value, timestamp) 
+                        VALUES (?, ?, ?, ?)''',
+                        (phase_id, location, volume['value'], volume['timestamp']))
+
+            conn.commit()
+            conn.close()
+            
+            print(f"Data for location {location} on {start_date} successfully stored in the database.")
+        else:
+            print(f"Request failed for location {location} on {start_date} with status code {response.status_code}")
 
 
 
