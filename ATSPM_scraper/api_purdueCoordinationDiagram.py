@@ -32,8 +32,8 @@ signals_df = pd.read_csv('data/signals.csv')
 location_identifiers = signals_df['Signal_ID'].astype(str).tolist()
 
 # Create a date range for start dates
-start_date = datetime(2024, 8, 1)  # Adjust this to your desired start date
-end_date = datetime(2024, 8, 27)  # Adjust this to your desired end date
+start_date = datetime(2024, 8, 28)  # Adjust this to your desired start date
+end_date = datetime(2024, 8, 28)  # Adjust this to your desired end date
 date_range = pd.date_range(start=start_date, end=end_date, freq='D')
 start_dates = [date.strftime('%Y-%m-%d') for date in date_range]
 

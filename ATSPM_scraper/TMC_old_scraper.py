@@ -61,21 +61,28 @@ async def fetch_data(session, intersection_id, date_str):
             async with session.post(url, headers=headers, json=payload) as response:
                 if response.status == 200:
                     content = await response.text()
-                    if any(error in content for error in [
+                    error_messages = [
                         "Object reference not set to an instance of an object",
                         "An error occurred while executing the command definition",
                         "The underlying provider failed on Open",
                         "Invalid attempt to read when no data is present"
-                    ]):
-                        print(f"Error message received. Retrying... (Attempt {attempt + 1}/{max_retries})")
-                        await asyncio.sleep(retry_delay)
-                        continue
-                    return content
+                    ]
+                    for error in error_messages:
+                        if error in content:
+                            error_message = f"Error message received for intersection {intersection_id} on {date_str}: {error}. Retrying... (Attempt {attempt + 1}/{max_retries})"
+                            print(error_message)
+                            with open('data/error_messages.txt', 'a') as error_file:
+                                error_file.write(f"{error_message}\n")
+                            await asyncio.sleep(retry_delay)
+                            break
+                    else:
+                        return content
+                    continue
                 else:
-                    print(f"Request failed with status code {response.status}. Retrying... (Attempt {attempt + 1}/{max_retries})")
+                    print(f"Request failed for intersection {intersection_id} on {date_str} with status code {response.status}. Retrying... (Attempt {attempt + 1}/{max_retries})")
                     await asyncio.sleep(retry_delay)
         except aiohttp.ClientError as e:
-            print(f"Request error: {e}. Retrying... (Attempt {attempt + 1}/{max_retries})")
+            print(f"Request error for intersection {intersection_id} on {date_str}: {e}. Retrying... (Attempt {attempt + 1}/{max_retries})")
             await asyncio.sleep(retry_delay)
     
     print(f"Failed to get a successful response after {max_retries} attempts")
@@ -140,7 +147,7 @@ def insert_batch(conn, data):
 async def main():
     intersection_ids = ['6035', '6038', '6039']
     start_date = datetime(2023, 5, 1)
-    end_date = datetime(2023, 6, 1)
+    end_date = datetime(2024, 8, 17)
     current_date = start_date
 
     conn = sqlite3.connect('data/Pioneer_Crossing_TMC.db')
