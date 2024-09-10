@@ -43,7 +43,7 @@ def get_volume_data():
               AND v.timestamp >= p.start 
               AND v.timestamp < p.end
             LIMIT 1) as start,
-           SUM(v.value) as total_volume
+           SUM(v.value) / 4 as total_volume
     FROM volume_per_hour v
     GROUP BY v.phase_id, v.location_identifier, plan_description, start
     """
@@ -63,6 +63,9 @@ the_df = pd.merge(plans_df, volumes_df, on=['phase_id', 'location_identifier', '
 
 # Define the signals on State St (6100 S to Williams)
 signals = [7147, 7474, 7148, 7642, 7149, 7150, 7073, 7152, 7153, 7154, 7641, 7155, 7156, 7157, 7158, 7159, 7657, 7160, 7401, 7161, 7162]
+
+# Create a dictionary mapping signal IDs to their order
+signal_order = {signal: index for index, signal in enumerate(signals)}
 
 # Define time windows
 window1_start = datetime(2024, 8, 1, 0, 0)
@@ -149,6 +152,18 @@ print("--------------------------   --------------------------")
 # Organize results by location description, then ordered by plan description
 organized_results = avg_data.reset_index()
 organized_results = organized_results.sort_values(['location_description', 'plan_description'])
+
+# Extract signal ID from location_description and create a new column for sorting
+organized_results['signal_id'] = organized_results['location_description'].str.extract('(\d+)').astype(int)
+
+# Create a new column with the order based on the signal_order dictionary
+organized_results['signal_order'] = organized_results['signal_id'].map(signal_order)
+
+# Sort the DataFrame by signal_order and then by plan_description
+organized_results = organized_results.sort_values(['signal_order', 'plan_description'])
+
+# Drop the temporary columns used for sorting
+organized_results = organized_results.drop(columns=['signal_id', 'signal_order'])
 
 # Write results to CSV
 csv_filename = 'state_analysis_aug_with_volume.csv'
