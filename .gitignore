@@ -17,3 +17,15 @@ output/
 *.png
 *.kml
 *.gpx
+*.csv
+*.json
+*.err
+*.log
+*.out
+*.tmp
+*.zip
+*.rar
+*.7z
+*.tar
+*.tar.gz
+*.db
