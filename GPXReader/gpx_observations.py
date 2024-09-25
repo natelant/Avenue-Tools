@@ -97,7 +97,7 @@ def parse_kml(file_path):
 # Function to map lat/lon to intersections
 def map_to_intersections(df, key_intersections):
     # Create a dictionary to map intersection names to longitude values
-    intersection_to_lon = key_intersections.set_index('Name')['Longitude'].to_dict()
+    intersection_to_lat = key_intersections.set_index('Name')['Latitude'].to_dict()
 
     def get_nearest_intersection(lat, lon):
         min_distance = float('inf')
@@ -113,11 +113,11 @@ def map_to_intersections(df, key_intersections):
     df = df.merge(key_intersections[['Intersection', 'Name']], on='Intersection', how='left')
 
     # Map intersection names to longitudes
-    df['LongitudeForPlot'] = df['Name'].map(intersection_to_lon)
+    df['LatitudeForPlot'] = df['Name'].map(intersection_to_lat)
     
-    return df, intersection_to_lon
+    return df, intersection_to_lat
 
-def make_time_plot(data, intersection_lon):
+def make_time_plot(data, intersection_lat):
     # Plotting with Plotly
 
 
@@ -125,7 +125,7 @@ def make_time_plot(data, intersection_lon):
         
     fig.add_trace(go.Scatter(
         x=data['TimeOfDay'],
-        y=data['Longitude'],
+        y=data['Latitude'],
         mode='markers',
         marker=dict(
             color=data['Speed'],
@@ -140,8 +140,8 @@ def make_time_plot(data, intersection_lon):
 
     # Customize y-axis to show intersection names
     fig.update_yaxes(
-        tickvals=list(intersection_lon.values()),  # Use longitude values as tick values
-        ticktext=list(intersection_lon.keys()),  # Use intersection names as tick texts
+        tickvals=list(intersection_lat.values()),  # Use latitude values as tick values
+        ticktext=list(intersection_lat.keys()),  # Use intersection names as tick texts
         title='Key Intersections'
     )
 
@@ -228,7 +228,7 @@ def main(gpx_folder, kml_file):
 # Run the inputs
 # File or Folder?
 # gpx_file = 'data/5400_pm.gpx'
-gpx_folder = 'GPXReader/data/SR7'
-kml_file = 'GPXReader/data/5400 S intersections.kml'
-map_output = 'GPXReader/output/US7.html'
+gpx_folder = "P:/_2020/20-063 - Statewide Traffic Signal Operations Support/300_Projects/Task 42 - US-89 (State St); 9000 S to 11400 S/Data Collection/Observations" #'GPXReader/data/SR7'
+kml_file = "P:/_2020/20-063 - Statewide Traffic Signal Operations Support/300_Projects/Task 42 - US-89 (State St); 9000 S to 11400 S/Data Collection/Observations/State Street (9000 South to 11400 South).kml"#'GPXReader/data/5400 S intersections.kml'
+map_output = 'P:/_2020/20-063 - Statewide Traffic Signal Operations Support/300_Projects/Task 42 - US-89 (State St); 9000 S to 11400 S/Data Collection/Observations/State Street (9000 South to 11400 South).html'
 main(gpx_folder, kml_file)
