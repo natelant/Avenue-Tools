@@ -13,6 +13,10 @@ from datetime import datetime
 from fastkml import kml
 import zipfile
 import sys 
+import pytz
+
+# Define Salt Lake City's timezone
+LOCAL_TZ = pytz.timezone('America/Denver')
 
 # Function to parse CSV file containing significant intersection information
 def parse_csv(csv_file):
@@ -92,8 +96,8 @@ def haversine(lat1, lon1, lat2, lon2):
 
 # Function to calculate travel time between two timestamps
 def calculate_travel_time(start_time, end_time):
-    start_datetime = datetime.strptime(start_time, '%Y-%m-%dT%H:%M:%SZ')
-    end_datetime = datetime.strptime(end_time, '%Y-%m-%dT%H:%M:%SZ')
+    start_datetime = datetime.strptime(start_time, '%Y-%m-%dT%H:%M:%S')
+    end_datetime = datetime.strptime(end_time, '%Y-%m-%dT%H:%M:%S')
     return (end_datetime - start_datetime).total_seconds()
 
 # Function to parse GPX file and calculate travel times
@@ -106,7 +110,9 @@ def parse_gpx_file(gpx_file, intersections):
         for track in gpx.tracks:
             for segment in track.segments:
                 for point in segment.points:
-                    gpx_data.append({'lat': point.latitude, 'lon': point.longitude, 'time': point.time.strftime('%Y-%m-%dT%H:%M:%SZ')})
+                    # Convert UTC time to local time
+                    local_time = point.time.replace(tzinfo=pytz.UTC).astimezone(LOCAL_TZ)
+                    gpx_data.append({'lat': point.latitude, 'lon': point.longitude, 'time': local_time.strftime('%Y-%m-%dT%H:%M:%S')})
 
     # Initialize variables
     output_data = []  # Initialize output data list
@@ -120,7 +126,7 @@ def parse_gpx_file(gpx_file, intersections):
             # Calculate the distance between the current point and the intersection
             distance = haversine(point['lat'], point['lon'], intersection['lat'], intersection['lon'])
             # Check if the distance is within the threshold (50 feet)
-            if distance <= 15:  # 50 feet in meters
+            if distance <= 30:  # 100 feet in meters
                 closest_intersection = intersection
                 # Assign the time of the current point to the closest intersection
                 closest_intersection['time'] = point['time']
@@ -132,7 +138,7 @@ def parse_gpx_file(gpx_file, intersections):
                 # Calculate travel time between the previous intersection and the current closest intersection
                 travel_time = calculate_travel_time(prev_intersection['time'], point['time'])
                 # Store the segment start, segment finish, and travel time in the output data
-                output_data.append({'route_ID': prev_intersection['route_id'] + ' / ' + closest_intersection['route_id'], 'segment_start': prev_intersection['segment_id'], 'segment_finish': closest_intersection['segment_id'], 'travel_time': travel_time})
+                output_data.append({'route_ID': prev_intersection['route_id'] + ' / ' + closest_intersection['route_id'], 'segment_start': prev_intersection['segment_id'], 'segment_finish': closest_intersection['segment_id'], 'travel_time': travel_time, 'start_time': prev_intersection['time'], 'end_time': closest_intersection['time']})
             prev_intersection = closest_intersection
 
     # Convert output data to DataFrame
@@ -165,7 +171,7 @@ def main():
         pass
 
 
-    output_file = input("Enter the name of the output CSV file (i.e. output/AM_before.csv): ")
+    output_file = input("Enter the name of the output .xlsx file (i.e. output/AM_before.xlsx): ")
 
     
 
@@ -205,29 +211,42 @@ def main():
     # Format into table
     # Step 1: Filter out rows where segment_start equals segment_finish
     filtered_df = final_result[final_result['segment_start'] != final_result['segment_finish']]
-    # Add a new column indicating the order of occurrence for each combination
     filtered_df.loc[:,'route'] = filtered_df['segment_start'] + '_to_' + filtered_df['segment_finish']
+    # Add a new column indicating the order of occurrence for each combination
     filtered_df['run_number'] = filtered_df.groupby('route').cumcount() + 1
 
-    # Pivot the table based on the new column 'run_number'
-    pivoted_df = filtered_df.pivot_table(index=['route_ID', 'route'], columns='run_number', values='travel_time', aggfunc='first')
+    # Convert 'start_time' to datetime and remove timezone information
+    filtered_df['start_time'] = pd.to_datetime(filtered_df['start_time']).dt.tz_localize(None)
 
-    # Get the maximum run number
-    max_run_number = pivoted_df.columns.max()
+    # Get the earliest and latest hours
+    earliest_hour = filtered_df['start_time'].min().floor('H')
+    latest_hour = filtered_df['start_time'].max().ceil('H')
 
-    # Calculate the average travel time across runs
-    pivoted_df['average'] = pivoted_df.iloc[:, 1:max_run_number + 1].mean(axis=1)
+    # Create 15-minute bins
+    time_bins = pd.date_range(start=earliest_hour, end=latest_hour, freq='15T')
 
+    # Create unique labels for the bins (as strings)
+    time_labels = time_bins[:-1].strftime('%Y-%m-%d %H:%M')
 
-    # Calculate the standard deviation of travel times across runs
-    pivoted_df['std_deviation'] = pivoted_df.iloc[:, 1:max_run_number + 1].std(axis=1)
+    # Assign each row to a time bin
+    filtered_df['time_bin'] = pd.cut(filtered_df['start_time'], bins=time_bins, labels=time_labels, include_lowest=True)
+
+    # Pivot the table based on the new column 'time_bin'
+    pivoted_df = filtered_df.pivot_table(index=['route_ID', 'route'], columns='time_bin', values='travel_time', aggfunc='first')
+
+    # Calculate the average travel time across time bins
+    pivoted_df['average'] = pivoted_df.mean(axis=1)
+
+    # Calculate the standard deviation of travel times across time bins
+    pivoted_df['std_deviation'] = pivoted_df.std(axis=1)
 
     # Output the total table of all calculated travel times
     print(pivoted_df)
 
-    # Write the output table to a CSV file
-    
-    pivoted_df.to_csv(output_file)
+    # Write filtered_df to sheet one and pivoted_df to sheet two of an xlsx file    
+    with pd.ExcelWriter(output_file, engine='xlsxwriter') as writer:
+        filtered_df.to_excel(writer, sheet_name='Sheet1')
+        pivoted_df.to_excel(writer, sheet_name='Sheet2')
     print(f"Output table has been written to {output_file}")
 
 
