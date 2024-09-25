@@ -145,12 +145,12 @@ def insert_batch(conn, data):
     conn.commit()
 
 async def main():
-    intersection_ids = ['6035', '6038', '6039']
-    start_date = datetime(2023, 5, 1)
-    end_date = datetime(2024, 8, 17)
+    intersection_ids = ['7174', '7643', '7175', '7640', '7176', '7352', '7177', '7178', '7179', '7353', '7351'] # lower state st
+    start_date = datetime(2024, 8, 1)
+    end_date = datetime(2024, 8, 31)
     current_date = start_date
 
-    conn = sqlite3.connect('data/Pioneer_Crossing_TMC.db')
+    conn = sqlite3.connect('data/State_11400_TMC.db')
     cursor = conn.cursor()
     cursor.execute('''CREATE TABLE IF NOT EXISTS tmc_data_detailed
                       (id INTEGER PRIMARY KEY AUTOINCREMENT,

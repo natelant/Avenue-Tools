@@ -70,7 +70,7 @@ signal_order = {signal: index for index, signal in enumerate(signals)}
 # Define time windows
 window1_start = datetime(2024, 8, 1, 0, 0)
 window1_end = datetime(2024, 8, 20, 23, 59)
-window2_start = datetime(2024, 8, 26, 0, 0)
+window2_start = datetime(2024, 9, 5, 0, 0)
 window2_end = datetime(2024, 9, 8, 23, 59)
 
 # Convert 'start' and 'end' columns to datetime
@@ -166,7 +166,7 @@ organized_results = organized_results.sort_values(['signal_order', 'plan_descrip
 organized_results = organized_results.drop(columns=['signal_id', 'signal_order'])
 
 # Write results to CSV
-csv_filename = 'state_analysis_aug_with_volume.csv'
+csv_filename = 'AoG_summary_table.csv'
 organized_results.to_csv(csv_filename, index=False)
 
 print(f"\nResults have been written to {csv_filename}")
