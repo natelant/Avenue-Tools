@@ -8,3 +8,13 @@ folium
 pytz
 gpxpy
 fastkml
+geopy
+openpyxl
+zipfile
+xml.etree.ElementTree
+math
+datetime
+pytz
+kml
+os
+

@@ -66,16 +66,6 @@ def parse_kml(kml_file):
                                     'lat': coordinates[1],
                                     'lon': coordinates[0]
                                 })
-                            """
-                            elif geometry.geom_type == 'LineString':
-                                for coord in geometry.coords:
-                                    intersections.append({
-                                        'route_id': feature.name,
-                                        'segment_id': feature.name,
-                                        'lat': coord[1],
-                                        'lon': coord[0]
-                                    })
-                            """
     return intersections
 #-------------------
 
@@ -112,7 +102,11 @@ def parse_gpx_file(gpx_file, intersections):
                 for point in segment.points:
                     # Convert UTC time to local time
                     local_time = point.time.replace(tzinfo=pytz.UTC).astimezone(LOCAL_TZ)
-                    gpx_data.append({'lat': point.latitude, 'lon': point.longitude, 'time': local_time.strftime('%Y-%m-%dT%H:%M:%S')})
+                    gpx_data.append({
+                        'lat': point.latitude, 
+                        'lon': point.longitude, 
+                        'time': local_time.strftime('%Y-%m-%dT%H:%M:%S')
+                        })
 
     # Initialize variables
     output_data = []  # Initialize output data list
@@ -138,7 +132,13 @@ def parse_gpx_file(gpx_file, intersections):
                 # Calculate travel time between the previous intersection and the current closest intersection
                 travel_time = calculate_travel_time(prev_intersection['time'], point['time'])
                 # Store the segment start, segment finish, and travel time in the output data
-                output_data.append({'route_ID': prev_intersection['route_id'] + ' / ' + closest_intersection['route_id'], 'segment_start': prev_intersection['segment_id'], 'segment_finish': closest_intersection['segment_id'], 'travel_time': travel_time, 'start_time': prev_intersection['time'], 'end_time': closest_intersection['time']})
+                output_data.append({
+                    'route_ID': prev_intersection['route_id'] + ' / ' + closest_intersection['route_id'], 
+                    'segment_start': prev_intersection['segment_id'], 
+                    'segment_finish': closest_intersection['segment_id'], 
+                    'travel_time': travel_time, 
+                    'start_time': prev_intersection['time'], 
+                    'end_time': closest_intersection['time']})
             prev_intersection = closest_intersection
 
     # Convert output data to DataFrame
