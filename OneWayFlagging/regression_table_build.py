@@ -81,13 +81,13 @@ def calculate_bearing(lat1, lon1, lat2, lon2):
 # Function to convert bearing to compass direction
 def bearing_to_direction(bearing):
     if 45 <= bearing < 135:
-        return 'Eastbound'
+        return 'EB'
     elif 135 <= bearing < 225:
-        return 'Southbound'
+        return 'SB'
     elif 225 <= bearing < 315:
-        return 'Westbound'
+        return 'WB'
     else:
-        return 'Northbound'
+        return 'NB'
 
 # Function to parse GPX file and calculate speed (and grade) returns a df
 def parse_gpx_file(gpx_file, intersections, route_name):
@@ -153,7 +153,7 @@ def parse_gpx_file(gpx_file, intersections, route_name):
                 
                 # Store the segment start, segment finish, average speed, average grade, total distance, and direction in the output data
                 output_data.append({
-                    'route_id': route_name,
+                    'route_name': route_name,
                     'segment_ID': prev_intersection['pin_id'] + ' / ' + closest_intersection['pin_id'], 
                     'segment_start': prev_intersection['segment_id'], 
                     'segment_finish': closest_intersection['segment_id'], 
@@ -162,7 +162,7 @@ def parse_gpx_file(gpx_file, intersections, route_name):
                     'total_distance': total_distance * 0.000621371, # convert to miles
                     'start_time': prev_intersection['time'], 
                     'end_time': closest_intersection['time'],
-                    'direction': direction})  # Add direction to the output data
+                    'Direction': direction})  # Add direction to the output data
             prev_intersection = closest_intersection
 
     # Convert output data to DataFrame
@@ -172,7 +172,7 @@ def parse_gpx_file(gpx_file, intersections, route_name):
     # filter out any rows where segment_finish contains 'Queue' or 'queue'
     output_df = output_df[~output_df['segment_finish'].str.contains('Queue|queue', case=False)].reset_index(drop=True)
     # group by route_ID and calculate average speed, grade, and distance
-    output_df = output_df.groupby(['route_id', 'segment_ID', 'direction']).agg({
+    output_df = output_df.groupby(['route_name', 'segment_ID', 'Direction']).agg({
         'avg_speed': 'mean',
         'avg_grade': 'mean',
         'total_distance': 'mean'
@@ -180,7 +180,7 @@ def parse_gpx_file(gpx_file, intersections, route_name):
     # create new column for segment_type where if segment_ID contains 'Queue' or 'queue' then segment_type = 'Queue' else segment_type = 'Segment'
     output_df['segment_type'] = output_df['segment_ID'].str.contains('Queue|queue', case=False).apply(lambda x: 'Queue' if x else 'Segment').reset_index(drop=True)
     # group by route_id and direction and then create column for average speed in queue, average speed in segment, average grade (weighted by distance), total distance in segment
-    grouped_df = output_df.groupby(['route_id', 'direction'])
+    grouped_df = output_df.groupby(['route_name', 'Direction'])
 
     avg_speed_queue = grouped_df.apply(lambda x: x[x['segment_type'] == 'Queue']['avg_speed']).reset_index(name='avg_speed_queue')
     avg_speed_segment = grouped_df.apply(lambda x: x[x['segment_type'] == 'Segment']['avg_speed']).reset_index(name='avg_speed_segment')
@@ -192,9 +192,9 @@ def parse_gpx_file(gpx_file, intersections, route_name):
     total_distance_segment = grouped_df.apply(lambda x: x[x['segment_type'] == 'Segment']['total_distance']).reset_index(name='total_distance_segment')
 
     # Merge all the calculated columns into a single DataFrame
-    final_df = avg_speed_queue.merge(avg_speed_segment, on=['route_id', 'direction'])
-    final_df = final_df.merge(avg_grade_weighted, on=['route_id', 'direction'])
-    final_df = final_df.merge(total_distance_segment, on=['route_id', 'direction'])
+    final_df = avg_speed_queue.merge(avg_speed_segment, on=['route_name', 'Direction'])
+    final_df = final_df.merge(avg_grade_weighted, on=['route_name', 'Direction'])
+    final_df = final_df.merge(total_distance_segment, on=['route_name', 'Direction'])
 
     # if the dataframe contains columns with 'level' in the name, drop them
     final_df = final_df[[col for col in final_df.columns if 'level' not in col]]
@@ -252,8 +252,163 @@ def parse_kml(folder):
                             
     return intersections
 
-# ------------------
-## Calculate segment grade speed and distance
+# function that cleans the excel files
+def clean_xlsm(filename, route_name):
+    # Read the Excel file into a dataframe
+    df = pd.read_excel(filename)
+    # keep only the first 3 columns
+    df = df.iloc[:, :3]
+    
+    # Filter out invalid segments between multiple 'Start's without an intervening 'Stop'
+    segments = []
+    start_idx = None
+    valid_segment = True
+
+    for i, row in df.iterrows():
+        if row['Vehicle'] == 'Start':
+            if start_idx is not None:
+                # Exclude the segment if 'Start' is immediately followed by 'Stop'
+                if i == start_idx + 1 and df.loc[i, 'Vehicle'] == 'Stop':
+                    start_idx = None
+                    valid_segment = False
+                    continue
+            start_idx = i
+            valid_segment = True
+        elif row['Vehicle'] == 'Stop':
+            if start_idx is not None:
+                # Include only segments with valid data between 'Start' and 'Stop'
+                if valid_segment:
+                    segments.append(df.loc[start_idx:i])
+            start_idx = None
+            valid_segment = False
+
+    # Concatenate valid segments into a single DataFrame
+    if segments:
+        cleaned = pd.concat(segments)
+    else:
+        cleaned = pd.DataFrame(columns=df.columns)
+
+    # remove consecutive start-stops
+    drop_rows = cleaned[(cleaned['Vehicle'] == 'Start') & (cleaned['Vehicle'].shift(-1) == 'Stop')].index
+    drop_rows = drop_rows.union(drop_rows+1)
+
+    cleaned = cleaned.drop(drop_rows)
+
+    #remove rows with nan in the Vehicle column
+    cleaned = cleaned[cleaned['Vehicle'].notna()]
+    # Vehicle should be a string
+    cleaned['Vehicle'] = cleaned['Vehicle'].astype(str)
+
+    # Add route_name column
+    cleaned['route_name'] = route_name
+
+    return cleaned
+
+
+# write fucntion to convert Time Stamp to a datetime variable
+def time_to_datetime(t):
+    return datetime.combine(datetime.today(), t)
+
+# generate counts from the xlsm files
+def generate_counts(xlsm_files, route_name):
+    # Initialize empty lists to hold data for counts and splits
+    counts_data = []
+    splits_data = []
+    hourly_data = []
+    
+    for file in xlsm_files:
+        # Read the XLSM file
+        df = clean_xlsm(file, route_name)
+
+        # Calculate headway here
+        # Convert 'time stamp' to datetime for continuous axis plotting
+        df['Timestamp'] = df['Time Stamp'].apply(time_to_datetime)
+        df['headway'] = df.groupby(['route_name', 'Direction'])['Timestamp'].diff().dt.total_seconds()
+        # Initialize variables
+        split_id = 1
+        split_data = []
+        
+        # Loop through rows and create split_id
+        for _, row in df.iterrows():
+            split_data.append(row.to_dict())
+            split_data[-1]['split_id'] = split_id
+            
+            # Check if 'Vehicle' is a string and compare to 'stop'
+            if isinstance(row['Vehicle'], str) and row['Vehicle'].lower() == 'stop':
+                split_id += 1
+        
+        # Loop through the split_data list to separate counts and splits
+        for row in split_data:
+            if row['Vehicle'].lower() == 'start' or row['Vehicle'].lower() == 'stop':
+                # Append to splits_data if the vehicle is 'Start' or 'Stop'
+                splits_data.append(row)
+            else:
+                # Change 'Probe' or 'probe' to 'Car' in the 'Vehicle' column
+                if row['Vehicle'].lower() == 'probe':
+                    row['Vehicle'] = 'Car'
+                # Append to counts_data if the vehicle is not 'Start' or 'Stop'
+                counts_data.append(row)
+                hourly_data.append(row)
+
+    # Group counts_data by route_name, split_id, and direction
+    grouped_counts = pd.DataFrame(counts_data).groupby(['route_name', 'split_id', 'Direction'])
+    
+    # Summarize the sum of vehicles, the average headway, and calculate the truck percentage for each group
+    counts_df = grouped_counts.agg({
+        'Vehicle': ['count', lambda x: (x == 'Truck').sum() / len(x) * 100],  # Total count and truck percentage
+        'headway': 'mean'
+    })
+    
+    # Rename the columns
+    counts_df.columns = ['volume', 'truck_percentage', 'avg_headway']
+    
+    # Reset the index to make route_name, split_id, and Direction regular columns
+    counts_df = counts_df.reset_index()
+    
+    # Convert lists to DataFrames for splits and hourly data
+    splits_df = pd.DataFrame(splits_data)
+    # Order the splits_df by 'Timestamp'
+    splits_df = splits_df.sort_values(by='Timestamp')
+    # group by route_name and direction and pivot by Vehicle and fill with Timestamp
+    splits_df = splits_df.pivot(index=['route_name', 'Direction', 'split_id'], columns='Vehicle', values='Timestamp')
+    # (grouped by route_name and direction) calculate split time, green time, and red time
+    # green time is stop time - start time
+    # split time is start time - previous start time
+    # red time is split time - green time
+    # all red time is start time - previous stop time
+    splits_df['green_time'] = (splits_df['Stop'] - splits_df['Start']).dt.total_seconds()
+    splits_df['split_time'] = (splits_df['Start'] - splits_df.groupby(level=['route_name', 'Direction'])['Start'].shift(1)).dt.total_seconds()
+    splits_df['red_time'] = splits_df['split_time'] - splits_df['green_time']
+    splits_df['all_red_time'] = (splits_df['Start'] - splits_df.groupby(level=['route_name', 'Direction'])['Stop'].shift(1)).dt.total_seconds()
+    
+    # filter out rows where split_time is greater than 1000
+    splits_df = splits_df[(splits_df['split_time'] < 1000) | (splits_df['split_time'].isna())]
+
+    hourly_df = pd.DataFrame(hourly_data)
+
+    # Group by route_name and Direction
+    grouped = hourly_df.groupby(['route_name', 'Direction'])
+    
+    # Calculate total volume and total time for each group
+    hourly_summary = grouped.agg({
+        'Vehicle': 'count',  # Total volume
+        'Timestamp': lambda x: (x.max() - x.min()).total_seconds() / 3600  # Total time in hours
+    }).reset_index()
+    
+    # Rename columns
+    hourly_summary.columns = ['route_name', 'Direction', 'Total_Volume', 'Total_Hours']
+    
+    # Calculate volume per hour
+    hourly_summary['Volume_Per_Hour'] = hourly_summary['Total_Volume'] / hourly_summary['Total_Hours']
+    # drop the Total_Hours and total volume columns
+    hourly_summary = hourly_summary.drop(columns=['Total_Hours', 'Total_Volume'])
+        
+        
+    # counts is a combined df of both count xlsm files the contains volume headway and truck percentage for each split
+    # splits is a combined df of both count xlsm files and contains the split_id, green_time, red_time, and start_time
+    # hourly is a combined df of both count xlsm files and contains the total hourly volume for each direction
+    return counts_df, splits_df, hourly_summary
+
 
 
 
@@ -284,38 +439,23 @@ files = read_files(folder_path)
 route_name = os.path.basename(folder_path)
 print('route_name:', route_name)
 
+# parse the kml file and get the intersections
 kml_intersections = parse_kml(folder_path)
+
+# parse the gpx file and get the segment information
 gpx_df = parse_gpx_file(files['gpx'], kml_intersections, route_name) # returns a df with segment_ID, avg_speed, avg_grade, total_distance
-print(gpx_df)
+
+# parse the xlsm files and generate counts, splits, and volumes, etc.
+xlsm_files = [files['xlsm1'], files['xlsm2']]
+counts_df, splits_df, hourly_df = generate_counts(xlsm_files, route_name)
 
 
+# Merge gpx_df, counts_df, and hourly_df into splits_df by route_name and Direction
+merged_df = pd.merge(splits_df.reset_index(), gpx_df, on=['route_name', 'Direction'], how='left')
+merged_df = pd.merge(merged_df, counts_df, on=['route_name', 'Direction', 'split_id'], how='left')
+merged_df = pd.merge(merged_df, hourly_df, on=['route_name', 'Direction'], how='left')
+print(merged_df.head(60))
 
-#!# creates the splits table
-
-
-
-# Claude output:
-# if 'xlsm1' in files:
-#     xlsm1_data = parse_xlsm(files['xlsm1'])
-#     print("Data from first XLSM file:")
-#     print(xlsm1_data[:5])  # Print first 5 rows as a sample
-
-# if 'xlsm2' in files:
-#     xlsm2_data = parse_xlsm(files['xlsm2'])
-#     print("Data from second XLSM file:")
-#     print(xlsm2_data[:5])  # Print first 5 rows as a sample
-
-
-
-# print("\nSegment Analysis:")
-# print("Start | End | Avg Speed (km/h) | Avg Grade (%) | Total Distance (km)")
-# print("-" * 65)
-# for segment in segments:
-#     print(f"{segment['start']:5} | {segment['end']:3} | {segment['avg_speed']:16.2f} | {segment['avg_grade']:13.2f} | {segment['total_distance']:19.2f}")
-
-
-
-#!!! Return the DATA TABLE = list of splits and all relevant information. Ready for regression.
 
 # -----------------------------------------------------------------------------------------------------------------------------------------------
 # interactions - opposite direction information - additional variables and possible calculations like saturated flow rates, capacity, delay, etc.
