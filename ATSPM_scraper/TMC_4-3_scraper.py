@@ -145,12 +145,15 @@ def insert_batch(conn, data):
     conn.commit()
 
 async def main():
-    intersection_ids = ['7174', '7643', '7175', '7640', '7176', '7352', '7177', '7178', '7179', '7353', '7351'] # lower state st
-    start_date = datetime(2024, 8, 1)
-    end_date = datetime(2024, 8, 31)
+    # lower state st = ['7174', '7643', '7175', '7640', '7176', '7352', '7177', '7178', '7179', '7353', '7351'] 
+    # SR 209 (9000 S) = ['7522', '7521', '7386', '7423', '7422', '7421', '7067']
+    # SR 48 (7800 S) = []'7066', '7354', '7012', '7011', '7010', '7116']
+    intersection_ids = ['7522', '7521', '7386', '7423', '7422', '7421', '7067'] 
+    start_date = datetime(2024, 9, 1)
+    end_date = datetime(2024, 9, 24)
     current_date = start_date
 
-    conn = sqlite3.connect('data/State_11400_TMC.db')
+    conn = sqlite3.connect('data/SR209_TMC.db')
     cursor = conn.cursor()
     cursor.execute('''CREATE TABLE IF NOT EXISTS tmc_data_detailed
                       (id INTEGER PRIMARY KEY AUTOINCREMENT,
