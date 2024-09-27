@@ -367,22 +367,31 @@ def generate_counts(xlsm_files, route_name):
     
     # Convert lists to DataFrames for splits and hourly data
     splits_df = pd.DataFrame(splits_data)
-    # Order the splits_df by 'Timestamp'
-    splits_df = splits_df.sort_values(by='Timestamp')
+    
     # group by route_name and direction and pivot by Vehicle and fill with Timestamp
     splits_df = splits_df.pivot(index=['route_name', 'Direction', 'split_id'], columns='Vehicle', values='Timestamp')
+    # Order the splits_df by 'Timestamp'
+    splits_df = splits_df.sort_values(by='Start')
     # (grouped by route_name and direction) calculate split time, green time, and red time
     # green time is stop time - start time
     # split time is start time - previous start time
     # red time is split time - green time
     # all red time is start time - previous stop time
     splits_df['green_time'] = (splits_df['Stop'] - splits_df['Start']).dt.total_seconds()
-    splits_df['split_time'] = (splits_df['Start'] - splits_df.groupby(level=['route_name', 'Direction'])['Start'].shift(1)).dt.total_seconds()
-    splits_df['red_time'] = splits_df['split_time'] - splits_df['green_time']
-    splits_df['all_red_time'] = (splits_df['Start'] - splits_df.groupby(level=['route_name', 'Direction'])['Stop'].shift(1)).dt.total_seconds()
-    
-    # filter out rows where split_time is greater than 1000
-    splits_df = splits_df[(splits_df['split_time'] < 1000) | (splits_df['split_time'].isna())]
+    splits_df['previous_red_time'] = (splits_df['Start'] - splits_df.groupby(level=['route_name', 'Direction'])['Stop'].shift(1)).dt.total_seconds()
+    # verify that the previous Direction is not the same as the current Direction
+    splits_df = splits_df.reset_index()
+
+    # Calculate the time differences
+    start_diff = (splits_df['Start'] - splits_df['Start'].shift(1)).dt.total_seconds()
+    start_stop_diff = (splits_df['Start'] - splits_df['Stop'].shift(1)).dt.total_seconds()
+
+    # Create boolean mask for direction changes
+    direction_changed = splits_df['Direction'] != splits_df['Direction'].shift(1)
+
+    # Apply the calculations using numpy.where()
+    splits_df['previous_split_time'] = np.where(direction_changed, start_diff, np.nan)
+    splits_df['previous_red_clearance'] = np.where(direction_changed, start_stop_diff, np.nan)
 
     hourly_df = pd.DataFrame(hourly_data)
 
@@ -408,25 +417,6 @@ def generate_counts(xlsm_files, route_name):
     # splits is a combined df of both count xlsm files and contains the split_id, green_time, red_time, and start_time
     # hourly is a combined df of both count xlsm files and contains the total hourly volume for each direction
     return counts_df, splits_df, hourly_summary
-
-
-
-
-# Usage example:
-# gpx_df = parse_gpx(files['gpx'])
-# kml_intersections = parse_kml(folder_path)
-# segment_df = create_segment_dataframe(gpx_df, kml_intersections)
-# print(segment_df)
-
-
-
-
-
-## calculate hourly volume from the counts
-
-## calculates splits, volumes, and headways from counts
-
-
 
 
 
