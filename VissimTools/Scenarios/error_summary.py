@@ -1,6 +1,8 @@
 import pandas as pd
 from pathlib import Path
 import re
+import os
+import platform
 
 def read_err_files(base_folder):
     data = []
@@ -115,20 +117,7 @@ def parse_error_content(df):
     
     return pd.DataFrame(parsed_data), pd.DataFrame(vehicle_input_warnings)
 
-# Specify the base folder path
-base_folder = 'Scenarios/S000002'
 
-# Read the .err files and create a DataFrame
-df = read_err_files(base_folder)
-
-# Parse the error content
-parsed_df, vehicle_input_df = parse_error_content(df)
-
-# Display the parsed DataFrames
-print("Parsed warnings:")
-print(parsed_df)
-print("\nVehicle input warnings:")
-print(vehicle_input_df)
 
 # Create summary for Sheet 1
 def create_summary_sheet1(df):
@@ -156,9 +145,12 @@ def create_summary_sheet2(df):
 
     return grouped_df
 
-# Create Excel file with summary sheets
 # Create summary for Sheet 3
 def create_summary_sheet3(df):
+    # Check if the DataFrame is empty or missing required columns
+    if df.empty or not all(col in df.columns for col in ['input_id', 'simulation_id', 'remaining_vehicles']):
+        return pd.DataFrame(columns=['input_id', 'Average'])  # Return empty DataFrame with expected columns
+    
     # Group by input_id and simulation_id, then sum the remaining_vehicles
     grouped_df = df.groupby(['input_id', 'simulation_id'])['remaining_vehicles'].sum().reset_index()
 
@@ -168,7 +160,7 @@ def create_summary_sheet3(df):
     # Add an average column
     pivoted_df['Average'] = pivoted_df.mean(axis=1)
 
-    # Sort the dataframe by Total in descending order
+    # Sort the dataframe by Average in descending order
     pivoted_df = pivoted_df.sort_values('Average', ascending=False)
 
     return pivoted_df
@@ -189,7 +181,53 @@ def create_excel_summary(parsed_df, vehicle_input_df, output_file='error_summary
 
     print(f"Excel file '{output_file}' has been created with Lane Change, Routing, and Vehicle Input sheets.")
 
-# Create the Excel summary
-create_excel_summary(parsed_df, vehicle_input_df)
+def open_file(filename):
+    if platform.system() == 'Darwin':       # macOS
+        os.system(f'open "{filename}"')
+    elif platform.system() == 'Windows':    # Windows
+        os.system(f'start excel "{filename}"')
+    else:                                   # linux variants
+        os.system(f'xdg-open "{filename}"')
+
+def print_ascii_art():
+    Fire = [
+        r'                       )                       )     )  (    (     ',
+        r'   (                ( /(              *   ) ( /(  ( /(  )\ ) )\ )  ',
+        r'   )\    (   (  (   )\())   (  (    ` )  /( )\()) )\())(()/((()/(  ',
+        r'((((_)(  )\  )\ )\ ((_)\    )\ )\    ( )(_)|(_)\ ((_)\  /(_))/(_)) ',
+        r' )\ _ )\((_)((_|(_) _((_)_ ((_|(_)  (_(_())  ((_)  ((_)(_)) (_))   ',
+        r' (_)_\(_) \ / /| __| \| | | | | __| |_   _| / _ \ / _ \| |  / __|  ',
+        r'  / _ \  \ V / | _|| .` | |_| | _|    | |  | (_) | (_) | |__\__ \  ',
+        r' /_/ \_\  \_/  |___|_|\_|\___/|___|   |_|   \___/ \___/|____|___/  '
+    ]
+
+    for line in Fire:
+        print(line)
+
+if __name__ == "__main__":
+    print_ascii_art()
+    # Prompt for the base folder
+    base_folder = input("Enter the path to the base folder containing the .results folder: ").strip()
+    # Check if the folder exists
+    if not os.path.exists(base_folder):
+        print(f"Error: The folder '{base_folder}' does not exist.")
+        print("Please check the path and try again.")
+        exit(1)
+
+    output_file='error_summary.xlsx'
+
+    
+
+    # Read the .err files and create a DataFrame
+    df = read_err_files(base_folder)
+
+    # Parse the error content
+    parsed_df, vehicle_input_df = parse_error_content(df)
+
+    # Create the Excel summary
+    create_excel_summary(parsed_df, vehicle_input_df, output_file)
 
 
+    # Open the Excel file
+    open_file(output_file)
+    print(f"Excel file has successfully been created.")
