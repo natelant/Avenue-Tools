@@ -11,6 +11,7 @@ import numpy as np
 import pytz
 from fastkml import kml
 import zipfile
+import sys
 # INPUTS... folder name or raw files... maybe this will just loop through the folders in the folder path...
 # needs two counts folders (one in each direction), GPX, KML, and a csv/txt with the route info (speed limit, multiple access, pilot car)
 # KML needs to have the direction in the name
@@ -424,28 +425,59 @@ def generate_counts(xlsm_files, route_name):
 #!!!# Loop through each folder, join tables, append to overall data table (splits)
 # test that the data is clean (start, stop, etc. not repeating start, start, etc.) and give warning that the data needs to be reviewed. Or warn that directions were skipped...?
 
-folder_path = "OneWayFlagging/regression_input/US-6"
-files = read_files(folder_path)
-route_name = os.path.basename(folder_path)
-print('route_name:', route_name)
+def process_folder(folder_path):
+    files = read_files(folder_path)
+    route_name = os.path.basename(folder_path)
+    print(f'Processing route: {route_name}')
 
-# parse the kml file and get the intersections
-kml_intersections = parse_kml(folder_path)
+    # parse the kml file and get the intersections
+    kml_intersections = parse_kml(folder_path)
 
-# parse the gpx file and get the segment information
-gpx_df = parse_gpx_file(files['gpx'], kml_intersections, route_name) # returns a df with segment_ID, avg_speed, avg_grade, total_distance
+    # parse the gpx file and get the segment information
+    gpx_df = parse_gpx_file(files['gpx'], kml_intersections, route_name)
 
-# parse the xlsm files and generate counts, splits, and volumes, etc.
-xlsm_files = [files['xlsm1'], files['xlsm2']]
-counts_df, splits_df, hourly_df = generate_counts(xlsm_files, route_name)
+    # parse the xlsm files and generate counts, splits, and volumes, etc.
+    xlsm_files = [files['xlsm1'], files['xlsm2']]
+    counts_df, splits_df, hourly_df = generate_counts(xlsm_files, route_name)
 
+    # Merge gpx_df, counts_df, and hourly_df into splits_df by route_name and Direction
+    merged_df = pd.merge(splits_df.reset_index(), gpx_df, on=['route_name', 'Direction'], how='left')
+    merged_df = pd.merge(merged_df, counts_df, on=['route_name', 'Direction', 'split_id'], how='left')
+    merged_df = pd.merge(merged_df, hourly_df, on=['route_name', 'Direction'], how='left')
 
-# Merge gpx_df, counts_df, and hourly_df into splits_df by route_name and Direction
-merged_df = pd.merge(splits_df.reset_index(), gpx_df, on=['route_name', 'Direction'], how='left')
-merged_df = pd.merge(merged_df, counts_df, on=['route_name', 'Direction', 'split_id'], how='left')
-merged_df = pd.merge(merged_df, hourly_df, on=['route_name', 'Direction'], how='left')
-print(merged_df.head(60))
+    return merged_df
 
+def main():
+    print("Welcome to the regression table builder.")
+    print("Please enter the names of the folders you want to analyze.")
+    print("Enter each folder name separated by commas (e.g., US-6, SR-40, ...).")
+    print("Press Enter when you're done.")
+
+    folder_input = input("Folders to analyze: ")
+    folder_names = [name.strip() for name in folder_input.split(',')]
+
+    if not folder_names:
+        print("No folders specified. Exiting.")
+        sys.exit(1)
+
+    total_merged_df = pd.DataFrame()
+
+    for folder_name in folder_names:
+        folder_path = os.path.join("regression_input", folder_name)
+        if not os.path.isdir(folder_path):
+            print(f"Warning: {folder_path} is not a valid directory. Skipping.")
+            continue
+
+        merged_df = process_folder(folder_path)
+        total_merged_df = pd.concat([total_merged_df, merged_df], ignore_index=True)
+
+    # Write the total_merged_df to a csv file
+    output_file = "total_regression_table.csv"
+    total_merged_df.to_csv(output_file, index=False)
+    print(f"Total regression table written to {output_file}")
+
+if __name__ == "__main__":
+    main()
 
 # -----------------------------------------------------------------------------------------------------------------------------------------------
 # interactions - opposite direction information - additional variables and possible calculations like saturated flow rates, capacity, delay, etc.
