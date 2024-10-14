@@ -9,6 +9,8 @@ import seaborn as sns
 from pykml import parser
 import numpy as np
 from geopy.distance import geodesic
+import plotly.graph_objects as go
+from plotly.subplots import make_subplots
 
 # Define the list of route IDs to query
 # State Street 6100 S to Williams = [9946, 9947]
@@ -137,9 +139,11 @@ try:
     columns = ['route_id', 'timestamp', 'distance', 'speed']
     total_df = pd.DataFrame(all_parsed_data, columns=columns)
     
-    # Optional: Save the total dataframe to a CSV file
-    total_df.to_csv(f'contours_raw_{route_name}.csv', index=False)
-    print(f"Total parsed data saved to contours_raw_{route_name}.csv")
+    # Save the total dataframe to sheet 1 of an Excel file
+    excel_filename = f'contours_raw_{route_name}.xlsx'
+    with pd.ExcelWriter(excel_filename, engine='openpyxl') as writer:
+        total_df.to_excel(writer, sheet_name='Sheet1', index=False)
+    print(f"Total parsed data saved to {excel_filename}, Sheet1")
 
 except Exception as e:
     print(f"An error occurred: {e}")
@@ -192,15 +196,16 @@ merged_df['speed_difference'] = merged_df['after_speed'] - merged_df['before_spe
 # Sort the results
 result_df = merged_df.sort_values(['route_id', 'hour', 'binned_distance'])
 
+# Write the results to sheet 2 of the same Excel file
+with pd.ExcelWriter(excel_filename, engine='openpyxl', mode='a') as writer:
+    result_df.to_excel(writer, sheet_name='Sheet2', index=False)
+print(f"Analysis results saved to {excel_filename}, Sheet2")
+
 # Display the results
 print(result_df)
 
 #-------------------------------------------------------------------------
-# Plotting the speed difference in a heatmap
-
-
-
-
+# Plotting the speed difference in a heatmap using Plotly
 intersections = read_kml_intersections(kml_file_path)
 
 # Create a dictionary to map route_id to direction
@@ -220,29 +225,41 @@ for route_id in [NB, SB]:
     # Sort the pivot_data index to ensure it's in ascending order
     pivot_data = pivot_data.sort_index()
     
-    # Create the heatmap
-    fig, ax = plt.subplots(figsize=(12, 20))  # Increased figure height
-    sns.heatmap(pivot_data, cmap='RdYlGn', center=0, annot=False, cbar_kws={'label': 'Speed Difference (mph)'}, ax=ax)
-
-    # Customize the y-axis with intersection names and distances
+    # Prepare y-axis labels
     y_ticks = [dist for _, dist in intersection_distances]
     y_labels = [f"{name} ({dist:.2f} mi)" for name, dist in intersection_distances]
     
-    # Calculate positions for y-ticks
-    y_positions = np.interp(y_ticks, pivot_data.index, range(len(pivot_data.index)))
+    # Create the heatmap using Plotly
+    fig = go.Figure(data=go.Heatmap(
+        z=pivot_data.values,
+        x=pivot_data.columns,
+        y=pivot_data.index,
+        colorscale='RdYlGn',
+        zmid=0,
+        colorbar=dict(title='Speed Difference (mph)')
+    ))
+
+    # Update layout
+    fig.update_layout(
+        title=f"Speed Difference Heatmap - {direction}",
+        xaxis_title="Hour of Day",
+        yaxis_title="Distance (miles)",
+        height=1000,  # Adjust the height as needed
+        width=800,    # Adjust the width as needed
+    )
+
+    # Customize y-axis ticks and labels
+    fig.update_yaxes(
+        tickmode='array',
+        tickvals=y_ticks,
+        ticktext=y_labels,
+        autorange='reversed'  # This inverts the y-axis
+    )
+
+    # Save the plot as an interactive HTML file
+    fig.write_html(f'heatmap_{route_name}_{route_direction[route_id]}.html')
     
-    ax.set_yticks(y_positions)
-    ax.set_yticklabels(y_labels, rotation=0)
+    # Optionally, you can also save as a static image
+    fig.write_image(f'heatmap_{route_name}_{route_direction[route_id]}.png', scale=2)
 
-    # Set the title and adjust y-axis limits
-    plt.title(f"Speed Difference Heatmap - {direction}")
-    ax.invert_yaxis()  # Invert y-axis to have distances increase from bottom to top
-    
-    # Adjust layout and save the plot
-    plt.tight_layout()
-    plt.savefig(f'heatmap_{route_name}_{route_direction[route_id]}.png', dpi=300, bbox_inches='tight')
-    plt.close()
-
-print("Heatmaps have been generated and saved.")
-
-
+print("Plotly heatmaps have been generated and saved.")

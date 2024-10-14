@@ -63,6 +63,7 @@ the_df = pd.merge(plans_df, volumes_df, on=['phase_id', 'location_identifier', '
 
 # Define the signals on State St (6100 S to Williams)
 signals = [7147, 7474, 7148, 7642, 7149, 7150, 7073, 7152, 7153, 7154, 7641, 7155, 7156, 7157, 7158, 7159, 7657, 7160, 7401, 7161, 7162]
+route_name = 'State St (6100 S to Williams)'
 
 # Create a dictionary mapping signal IDs to their order
 signal_order = {signal: index for index, signal in enumerate(signals)}
@@ -70,26 +71,26 @@ signal_order = {signal: index for index, signal in enumerate(signals)}
 # Define time windows
 window1_start = datetime(2024, 8, 1, 0, 0)
 window1_end = datetime(2024, 8, 20, 23, 59)
-window2_start = datetime(2024, 9, 5, 0, 0)
-window2_end = datetime(2024, 9, 8, 23, 59)
+window2_start = datetime(2024, 10, 10, 0, 0)
+window2_end = datetime(2024, 10, 13, 23, 59)
 
 # Convert 'start' and 'end' columns to datetime
 the_df['start'] = pd.to_datetime(the_df['start'], format='ISO8601')
 the_df['end'] = pd.to_datetime(the_df['end'], format='ISO8601')
 
 # Filter out Fridays, Saturdays, and Sundays
-the_df = the_df[~the_df['start'].dt.dayofweek.isin([4, 5, 6])]
+filtered_df = the_df[~the_df['start'].dt.dayofweek.isin([4, 5, 6])]
 
 # Filter data within the specified time windows
-mask = ((the_df['start'] >= window1_start) & (the_df['end'] <= window1_end)) | \
-       ((the_df['start'] >= window2_start) & (the_df['end'] <= window2_end))
-the_df = the_df[mask]
+mask = ((filtered_df['start'] >= window1_start) & (filtered_df['end'] <= window1_end)) | \
+       ((filtered_df['start'] >= window2_start) & (filtered_df['end'] <= window2_end))
+filtered_df = filtered_df[mask]
 
 # Filter out rows where Plan Description is Unknown or Free
-the_df = the_df[~the_df['plan_description'].isin(['Unknown', 'Free'])]
+filtered_df = filtered_df[~filtered_df['plan_description'].isin(['Unknown', 'Free'])]
 # Filter out rows where volume is 0 and also where percent_arrival_on_green is 0 
-the_df = the_df[the_df['total_volume'] > 0]
-the_df = the_df[the_df['percent_arrival_on_green'] > 0]
+filtered_df = filtered_df[filtered_df['total_volume'] > 0]
+filtered_df = filtered_df[filtered_df['percent_arrival_on_green'] > 0]
 
 # Function to remove outliers using IQR method
 def remove_outliers(df, column):
@@ -101,11 +102,16 @@ def remove_outliers(df, column):
     return df[(df[column] >= lower_bound) & (df[column] <= upper_bound)]
 
 # Remove outliers from percent_arrival_on_green and percent_green_time
-the_df = remove_outliers(the_df, 'percent_arrival_on_green')
-the_df = remove_outliers(the_df, 'percent_green_time')
+filtered_df = remove_outliers(filtered_df, 'percent_arrival_on_green')
+filtered_df = remove_outliers(filtered_df, 'percent_green_time')
 
-print(f"Rows after filtering: {len(the_df)}")
-print(the_df.head())
+print(f"Rows after filtering: {len(filtered_df)}")
+print(filtered_df.head())
+
+# Write the filtered DataFrame to an Excel file, first sheet is the original data, second sheet is the filtered data
+with pd.ExcelWriter(f'{route_name}_filtered_data.xlsx') as writer:
+    the_df.to_excel(writer, sheet_name='Original Data', index=False)
+    filtered_df.to_excel(writer, sheet_name='Filtered Data', index=False)
 
 # Define a function to assign time window
 def assign_time_window(date):
@@ -117,10 +123,10 @@ def assign_time_window(date):
         return 'Other'
 
 # Assign time window to each row
-the_df['time_window'] = the_df['start'].apply(assign_time_window)
+filtered_df['time_window'] = filtered_df['start'].apply(assign_time_window)
 
 # Group by location ID, plan description, phase, and time window
-grouped = the_df.groupby(['location_description', 'plan_description', 'phase_description', 'time_window'])
+grouped = filtered_df.groupby(['location_description', 'plan_description', 'phase_description', 'time_window'])
 
 # Calculate average percent arrival on green and total volume for each group
 avg_data = grouped.agg({
@@ -165,10 +171,28 @@ organized_results = organized_results.sort_values(['signal_order', 'plan_descrip
 # Drop the temporary columns used for sorting
 organized_results = organized_results.drop(columns=['signal_id', 'signal_order'])
 
-# Write results to CSV
-csv_filename = 'AoG_summary_table.csv'
-organized_results.to_csv(csv_filename, index=False)
+# Write results to sheet 3 of Excel file
+with pd.ExcelWriter(f'{route_name}_filtered_data.xlsx', engine='openpyxl', mode='a') as writer:
+    organized_results.to_excel(writer, sheet_name='Organized Results', index=False)
 
-print(f"\nResults have been written to {csv_filename}")
+print(f"\nResults have been written to {route_name}_filtered_data.xlsx")
 print("The CSV is organized by location description, then ordered by plan description.")
 
+
+# sort organized_results by percent_arrival_on_green_Difference in descending order
+organized_results = organized_results.sort_values('percent_arrival_on_green_Difference', ascending=False)
+
+# Create pivot table
+pivot = organized_results.pivot_table(
+    values='percent_arrival_on_green_Difference',
+    index=['location_description', 'plan_description'],
+    columns='phase_description',
+    aggfunc='first'
+)
+
+# Reset the index to make location_description and plan_description regular columns
+pivot = pivot.reset_index()
+
+# write pivot to sheet 4 of Excel file
+with pd.ExcelWriter(f'{route_name}_filtered_data.xlsx', engine='openpyxl', mode='a') as writer:
+    pivot.to_excel(writer, sheet_name='Pivot Table', index=False)
