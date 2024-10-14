@@ -11,26 +11,29 @@ import numpy as np
 from geopy.distance import geodesic
 
 # Define the list of route IDs to query
-route_ids = [13236, 13237]
+# State Street 6100 S to Williams = [9946, 9947]
+# State Street 11400 S to 9000 S = [13236, 13237]
+route_ids = [9946, 9947]
+route_name = 'State St (6100 S to Williams)'
 
 # User input to determine the direction of the routes
-NB = 13237
-SB = 13236
+NB = 9946
+SB = 9947
 EB = np.nan
 WB = np.nan
 
 # Read KML file (replace with your actual KML file path)
-kml_file_path = 'kml/State Street (9000 South to 11400 South).kml'
+kml_file_path = 'kml/State St (6100 S to Williams).kml'
 
 # Data download window (YYYY-MM-DD HH:MM:SS)
-start_datetime_str = "2024-09-1 00:00:00"
-end_datetime_str = "2024-10-07 23:59:59"
+start_datetime_str = "2024-08-1 00:00:00"
+end_datetime_str = "2024-10-13 23:59:59"
 
 # Define the comparisonwindow date thresholds (you should set these as input parameters)
-before_start = datetime(2024, 9, 1, 0, 0, 0)
-before_end = datetime(2024, 9, 30, 23, 59, 59)
-after_start = datetime(2024, 10, 5, 0, 0, 0)
-after_end = datetime(2024, 10, 7, 23, 59, 59)
+before_start = datetime(2024, 8, 1, 0, 0, 0)
+before_end = datetime(2024, 8, 21, 23, 59, 59)
+after_start = datetime(2024, 9, 19, 0, 0, 0)
+after_end = datetime(2024, 10, 13, 23, 59, 59)
 
 # Hardcoded username and password
 username = 'dbassett@avenueconsultants.com'
@@ -135,8 +138,8 @@ try:
     total_df = pd.DataFrame(all_parsed_data, columns=columns)
     
     # Optional: Save the total dataframe to a CSV file
-    total_df.to_csv('total_parsed_data.csv', index=False)
-    print("Total parsed data saved to total_parsed_data.csv")
+    total_df.to_csv(f'contours_raw_{route_name}.csv', index=False)
+    print(f"Total parsed data saved to contours_raw_{route_name}.csv")
 
 except Exception as e:
     print(f"An error occurred: {e}")
@@ -147,7 +150,7 @@ except Exception as e:
 # Group by route_id, hour, and binned_distance, then calculate average speed and calculate the speed difference
 
 # Load the CSV data into a pandas DataFrame
-df = pd.read_csv('total_parsed_data.csv')
+df = pd.read_csv(f'contours_raw_{route_name}.csv')
 
 # Convert the 'timestamp' column to datetime
 df['timestamp'] = pd.to_datetime(df['timestamp'], format='%Y-%m-%d %H:%M:%S')
@@ -184,7 +187,7 @@ after_grouped = after_grouped.rename(columns={'speed': 'after_speed'})
 merged_df = pd.merge(before_grouped, after_grouped, on=['route_id', 'hour', 'binned_distance'], how='outer')
 
 # Calculate the speed difference
-merged_df['speed_difference'] = merged_df['before_speed'] - merged_df['after_speed']
+merged_df['speed_difference'] = merged_df['after_speed'] - merged_df['before_speed']
 
 # Sort the results
 result_df = merged_df.sort_values(['route_id', 'hour', 'binned_distance'])
@@ -237,7 +240,7 @@ for route_id in [NB, SB]:
     
     # Adjust layout and save the plot
     plt.tight_layout()
-    plt.savefig(f'heatmap_{route_direction[route_id]}.png', dpi=300, bbox_inches='tight')
+    plt.savefig(f'heatmap_{route_name}_{route_direction[route_id]}.png', dpi=300, bbox_inches='tight')
     plt.close()
 
 print("Heatmaps have been generated and saved.")

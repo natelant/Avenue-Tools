@@ -95,9 +95,10 @@ def parse_kml(file_path):
     return key_intersections
 
 # Function to map lat/lon to intersections
-def map_to_intersections(df, key_intersections):
-    # Create a dictionary to map intersection names to longitude values
+def map_to_intersections(df, key_intersections, direction):
+    # Create dictionaries to map intersection names to latitude and longitude values
     intersection_to_lat = key_intersections.set_index('Name')['Latitude'].to_dict()
+    intersection_to_lon = key_intersections.set_index('Name')['Longitude'].to_dict()
 
     def get_nearest_intersection(lat, lon):
         min_distance = float('inf')
@@ -112,48 +113,48 @@ def map_to_intersections(df, key_intersections):
     df['Intersection'] = df.apply(lambda row: get_nearest_intersection(row['Latitude'], row['Longitude']), axis=1)
     df = df.merge(key_intersections[['Intersection', 'Name']], on='Intersection', how='left')
 
-    # Map intersection names to longitudes
+    # Map intersection names to latitudes and longitudes
     df['LatitudeForPlot'] = df['Name'].map(intersection_to_lat)
+    df['LongitudeForPlot'] = df['Name'].map(intersection_to_lon)
     
-    return df, intersection_to_lat
+    return df, intersection_to_lat if direction == 'NS' else intersection_to_lon
 
-def make_time_plot(data, intersection_lat):
-    # Plotting with Plotly
-
-
+def make_time_plot(data, intersection_coords, direction):
     fig = go.Figure()
-        
+    
+    y_column = 'Latitude' if direction == 'NS' else 'Longitude'
+    
     fig.add_trace(go.Scatter(
         x=data['TimeOfDay'],
-        y=data['Latitude'],
+        y=data[y_column],
         mode='markers',
         marker=dict(
             color=data['Speed'],
             # color=gpx_data['SpeedCategory'].apply(lambda x: color_map[x]),  # Map categorical values to colors
             colorscale=[[0, 'red'], [0.05, 'yellow'], [0.3, 'lightgreen'], [0.5, 'green'], [0.8, 'darkgreen'], [1, 'purple']],
             colorbar=dict(title='Speed Scale'),
-            size=10  # Adjust marker size as needed
+            size=10
         ),
-        text=data['Name'],  # Hover text
+        text=data['Name'],
         hoverinfo='text'
     ))
 
     # Customize y-axis to show intersection names
     fig.update_yaxes(
-        tickvals=list(intersection_lat.values()),  # Use latitude values as tick values
-        ticktext=list(intersection_lat.keys()),  # Use intersection names as tick texts
+        tickvals=list(intersection_coords.values()),
+        ticktext=list(intersection_coords.keys()),
         title='Key Intersections'
     )
 
     # Customize x-axis
     fig.update_xaxes(
         tickformat='%H:%M',
-        dtick=360  # 1 hour in milliseconds
+        dtick=360
     )
 
     # Set title
     fig.update_layout(
-        title='Key Intersections vs Time of Day with Speed Gradient'
+        title=f'Key Intersections vs Time of Day with Speed Gradient ({direction} Direction)'
     )
 
     fig.show()
@@ -184,14 +185,26 @@ def plot_data_on_map(df):
             popup=f"Time: {row['TimeOfDay']}<br>Speed: {row['Speed']} mph<br>Lat: {row['Latitude']}<br>Lon: {row['Longitude']}"
         ).add_to(m)
     
+    # Define the output file name
+    map_output = 'gpx_map.html'
+
     # Save the map to an HTML file
     m.save(map_output)
-    m.show()
-    print('Map has been saved as gpx_map.html')
+    print(f'Map has been saved as {map_output}')
 
 # Main function
-def main(gpx_folder, kml_file):
-    # get all gpx files into data frame
+def main():
+    # Prompt user for inputs
+    gpx_folder = input("Enter the path to the GPX folder: ")
+    kml_file = input("Enter the path to the KML file: ")
+    direction = input("Enter the direction (NS or EW): ")
+
+    # Validate direction input
+    while direction not in ['NS', 'EW']:
+        print("Invalid direction. Please enter either 'NS' or 'EW'.")
+        direction = input("Enter the direction (NS or EW): ")
+
+    # Process the data and create visualizations
     all_gpx_data = []
 
     for filename in os.listdir(gpx_folder):
@@ -207,7 +220,7 @@ def main(gpx_folder, kml_file):
     key_intersections = parse_kml(kml_file)
 
     # Map lat/lon to intersections
-    gpx_data, intersection_to_lon = map_to_intersections(gpx_data, key_intersections)
+    gpx_data, intersection_coords = map_to_intersections(gpx_data, key_intersections, direction)
 
     # Print the first 20 rows of the gpx_data DataFrame
     print(gpx_data.head(20))
@@ -215,20 +228,11 @@ def main(gpx_folder, kml_file):
     gpx_data = gpx_data.sort_values(by='TimeOfDay')
 
     # plot using plotly for dynamic visualization. lat/lon by time
-    make_time_plot(gpx_data, intersection_to_lon)
+    make_time_plot(gpx_data, intersection_coords, direction)
 
     # Plot the data on a map
     plot_data_on_map(gpx_data)
 
-
-    
-    
-
-
-# Run the inputs
-# File or Folder?
-# gpx_file = 'data/5400_pm.gpx'
-gpx_folder = "P:/_2020/20-063 - Statewide Traffic Signal Operations Support/300_Projects/Task 42 - US-89 (State St); 9000 S to 11400 S/Data Collection/Observations" #'GPXReader/data/SR7'
-kml_file = "P:/_2020/20-063 - Statewide Traffic Signal Operations Support/300_Projects/Task 42 - US-89 (State St); 9000 S to 11400 S/Data Collection/Observations/State Street (9000 South to 11400 South).kml"#'GPXReader/data/5400 S intersections.kml'
-map_output = 'P:/_2020/20-063 - Statewide Traffic Signal Operations Support/300_Projects/Task 42 - US-89 (State St); 9000 S to 11400 S/Data Collection/Observations/State Street (9000 South to 11400 South).html'
-main(gpx_folder, kml_file)
+# Run the script
+if __name__ == "__main__":
+    main()
