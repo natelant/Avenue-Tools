@@ -463,7 +463,8 @@ def main():
     total_merged_df = pd.DataFrame()
 
     for folder_name in folder_names:
-        folder_path = os.path.join("regression_input", folder_name)
+        #folder_path = os.path.join("regression_input", folder_name)
+        folder_path = folder_name
         if not os.path.isdir(folder_path):
             print(f"Warning: {folder_path} is not a valid directory. Skipping.")
             continue

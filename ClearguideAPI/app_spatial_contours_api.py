@@ -35,7 +35,7 @@ end_datetime_str = "2024-10-13 23:59:59"
 before_start = datetime(2024, 8, 1, 0, 0, 0)
 before_end = datetime(2024, 8, 21, 23, 59, 59)
 after_start = datetime(2024, 9, 19, 0, 0, 0)
-after_end = datetime(2024, 10, 13, 23, 59, 59)
+after_end = datetime(2024, 10, 2, 23, 59, 59)
 
 # Hardcoded username and password
 username = 'dbassett@avenueconsultants.com'
@@ -154,7 +154,7 @@ except Exception as e:
 # Group by route_id, hour, and binned_distance, then calculate average speed and calculate the speed difference
 
 # Load the CSV data into a pandas DataFrame
-df = pd.read_csv(f'contours_raw_{route_name}.csv')
+df = total_df
 
 # Convert the 'timestamp' column to datetime
 df['timestamp'] = pd.to_datetime(df['timestamp'], format='%Y-%m-%d %H:%M:%S')
