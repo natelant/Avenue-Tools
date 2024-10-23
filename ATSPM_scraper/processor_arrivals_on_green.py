@@ -2,63 +2,38 @@ import sqlite3
 import pandas as pd
 from datetime import datetime, timedelta
 
-def get_plans_data():
-    # Connect to the SQLite database
-    conn = sqlite3.connect('data/purdue_coordination_diagram.db')
+def get_data_from_db(query):
+    with sqlite3.connect('data/purdue_coordination_diagram.db') as conn:
+        return pd.read_sql_query(query, conn)
 
-    # SQL query to join plans with phases
+def get_plans_data():
     query = """
     SELECT DISTINCT p.*, ph.phase_number, ph.phase_description, ph.location_description
     FROM plans p
     LEFT JOIN phases ph ON p.phase_id = ph.phase_number AND p.location_identifier = ph.location_identifier
     """
-
-    # Read the data into a pandas DataFrame
-    df = pd.read_sql_query(query, conn)
-
-    # Close the database connection
-    conn.close()
-
-    return df
+    return get_data_from_db(query)
 
 def get_volume_data():
-    # Connect to the SQLite database
-    conn = sqlite3.connect('data/purdue_coordination_diagram.db')
-
-    # SQL query to join volume_per_hour with plans, avoiding duplications
     query = """
     SELECT v.phase_id,
            v.location_identifier,
-           (SELECT p.plan_description
-            FROM plans p
-            WHERE v.phase_id = p.phase_id 
-              AND v.location_identifier = p.location_identifier
-              AND v.timestamp >= p.start 
-              AND v.timestamp < p.end
-            LIMIT 1) as plan_description,
-           (SELECT p.start
-            FROM plans p
-            WHERE v.phase_id = p.phase_id 
-              AND v.location_identifier = p.location_identifier
-              AND v.timestamp >= p.start 
-              AND v.timestamp < p.end
-            LIMIT 1) as start,
+           p.plan_description,
+           p.start,
            SUM(v.value) / 4 as total_volume
     FROM volume_per_hour v
-    GROUP BY v.phase_id, v.location_identifier, plan_description, start
+    JOIN plans p ON v.phase_id = p.phase_id 
+                 AND v.location_identifier = p.location_identifier
+                 AND v.timestamp >= p.start 
+                 AND v.timestamp < p.end
+    GROUP BY v.phase_id, v.location_identifier, p.plan_description, p.start
     """
-
-    # Read the data into a pandas DataFrame
-    df = pd.read_sql_query(query, conn)
-
-    # Close the database connection
-    conn.close()
-
-    return df
+    return get_data_from_db(query)
 
 plans_df = get_plans_data()
 volumes_df = get_volume_data()
 
+# Combine data fetching and merging
 the_df = pd.merge(plans_df, volumes_df, on=['phase_id', 'location_identifier', 'plan_description', 'start'], how='inner')
 
 # Define the signals on State St (6100 S to Williams)
@@ -74,23 +49,26 @@ window1_end = datetime(2024, 8, 20, 23, 59)
 window2_start = datetime(2024, 10, 10, 0, 0)
 window2_end = datetime(2024, 10, 13, 23, 59)
 
-# Convert 'start' and 'end' columns to datetime
-the_df['start'] = pd.to_datetime(the_df['start'], format='ISO8601')
-the_df['end'] = pd.to_datetime(the_df['end'], format='ISO8601')
+# Function to truncate milliseconds
+def truncate_milliseconds(dt_string):
+    return dt_string.split('.')[0]
 
-# Filter out Fridays, Saturdays, and Sundays
-filtered_df = the_df[~the_df['start'].dt.dayofweek.isin([4, 5, 6])]
+# Optimize filtering
+the_df['start'] = pd.to_datetime(the_df['start'].apply(truncate_milliseconds), format='%Y-%m-%dT%H:%M:%S')
+the_df['end'] = pd.to_datetime(the_df['end'].apply(truncate_milliseconds), format='%Y-%m-%dT%H:%M:%S')
 
-# Filter data within the specified time windows
-mask = ((filtered_df['start'] >= window1_start) & (filtered_df['end'] <= window1_end)) | \
-       ((filtered_df['start'] >= window2_start) & (filtered_df['end'] <= window2_end))
-filtered_df = filtered_df[mask]
+mask = (
+    (~the_df['start'].dt.dayofweek.isin([4, 5, 6])) &
+    (
+        ((the_df['start'] >= window1_start) & (the_df['end'] <= window1_end)) |
+        ((the_df['start'] >= window2_start) & (the_df['end'] <= window2_end))
+    ) &
+    (~the_df['plan_description'].isin(['Unknown', 'Free'])) &
+    (the_df['total_volume'] > 0) &
+    (the_df['percent_arrival_on_green'] > 0)
+)
 
-# Filter out rows where Plan Description is Unknown or Free
-filtered_df = filtered_df[~filtered_df['plan_description'].isin(['Unknown', 'Free'])]
-# Filter out rows where volume is 0 and also where percent_arrival_on_green is 0 
-filtered_df = filtered_df[filtered_df['total_volume'] > 0]
-filtered_df = filtered_df[filtered_df['percent_arrival_on_green'] > 0]
+filtered_df = the_df[mask].copy()
 
 # Function to remove outliers using IQR method
 def remove_outliers(df, column):
@@ -113,17 +91,16 @@ with pd.ExcelWriter(f'{route_name}_filtered_data.xlsx') as writer:
     the_df.to_excel(writer, sheet_name='Original Data', index=False)
     filtered_df.to_excel(writer, sheet_name='Filtered Data', index=False)
 
-# Define a function to assign time window
-def assign_time_window(date):
-    if window1_start <= date <= window1_end:
-        return 'Window 1'
-    elif window2_start <= date <= window2_end:
-        return 'Window 2'
-    else:
-        return 'Other'
+# Optimize time window assignment
+filtered_df['time_window'] = pd.cut(
+    filtered_df['start'],
+    bins=[window1_start, window1_end, window2_start, window2_end],
+    labels=['Window 1', 'Between Windows', 'Window 2'],
+    include_lowest=True
+)
 
-# Assign time window to each row
-filtered_df['time_window'] = filtered_df['start'].apply(assign_time_window)
+# Remove the 'Between Windows' category if it's not needed
+filtered_df = filtered_df[filtered_df['time_window'] != 'Between Windows']
 
 # Group by location ID, plan description, phase, and time window
 grouped = filtered_df.groupby(['location_description', 'plan_description', 'phase_description', 'time_window'])
@@ -176,7 +153,7 @@ with pd.ExcelWriter(f'{route_name}_filtered_data.xlsx', engine='openpyxl', mode=
     organized_results.to_excel(writer, sheet_name='Organized Results', index=False)
 
 print(f"\nResults have been written to {route_name}_filtered_data.xlsx")
-print("The CSV is organized by location description, then ordered by plan description.")
+print("The Excel is organized by location description, then ordered by plan description.")
 
 
 # sort organized_results by percent_arrival_on_green_Difference in descending order
