@@ -379,13 +379,29 @@ def generate_counts(xlsm_files, route_name):
     # red time is split time - green time
     # all red time is start time - previous stop time
     splits_df['green_time'] = (splits_df['Stop'] - splits_df['Start']).dt.total_seconds()
-    splits_df['previous_red_time'] = (splits_df['Start'] - splits_df.groupby(level=['route_name', 'Direction'])['Stop'].shift(1)).dt.total_seconds()
-    # verify that the previous Direction is not the same as the current Direction
+
+    # Access 'Direction' from the index and convert to Series
+    direction_series = pd.Series(splits_df.index.get_level_values('Direction'))
+
+    # Shift the series
+    direction_shift_1 = direction_series.shift(1)
+    direction_shift_2 = direction_series.shift(2)
+
+    # Check if the previous two directions are the same
+    splits_df['previous_red_time'] = np.where(
+        direction_shift_2 != direction_shift_1,
+        (splits_df['Start'] - splits_df.groupby(level=['route_name', 'Direction'])['Stop'].shift(1)).dt.total_seconds(),
+        np.nan
+    )
+
+    # Reset index if needed
     splits_df = splits_df.reset_index()
 
     # Calculate the time differences
     start_diff = (splits_df['Start'] - splits_df['Start'].shift(1)).dt.total_seconds()
     start_stop_diff = (splits_df['Start'] - splits_df['Stop'].shift(1)).dt.total_seconds()
+    # after green all red time
+    after_green_red_diff = (splits_df['Start'].shift(-1) - splits_df['Stop']).dt.total_seconds()
 
     # Create boolean mask for direction changes
     direction_changed = splits_df['Direction'] != splits_df['Direction'].shift(1)
@@ -393,6 +409,14 @@ def generate_counts(xlsm_files, route_name):
     # Apply the calculations using numpy.where()
     splits_df['previous_split_time'] = np.where(direction_changed, start_diff, np.nan)
     splits_df['previous_red_clearance'] = np.where(direction_changed, start_stop_diff, np.nan)
+    splits_df['after_green_all_red'] = np.where(direction_changed, after_green_red_diff, np.nan)
+    # calculate "cycle length" and other variables
+    splits_df['cycle_length'] = splits_df['previous_red_time'] + splits_df['green_time']
+    splits_df['cycles_per_hour'] = 3600 / splits_df['cycle_length']
+    splits_df['green_time_per_hour'] = splits_df['cycles_per_hour'] * splits_df['green_time']
+    splits_df['red_time_per_hour'] = splits_df['cycles_per_hour'] * splits_df['previous_red_time']
+    splits_df['after_green_all_red_per_hour'] = (3600/(splits_df['green_time'] + splits_df['previous_split_time'] + splits_df['after_green_all_red'])) * splits_df['after_green_all_red']
+
 
     hourly_df = pd.DataFrame(hourly_data)
 
@@ -445,6 +469,10 @@ def process_folder(folder_path):
     merged_df = pd.merge(merged_df, counts_df, on=['route_name', 'Direction', 'split_id'], how='left')
     merged_df = pd.merge(merged_df, hourly_df, on=['route_name', 'Direction'], how='left')
 
+    # calculate flow rates
+    merged_df['hourly_flow_rate_green'] = 3600 / merged_df['avg_headway']
+    merged_df['hourly_flow_rate_red'] = merged_df['volume'] * merged_df['cycles_per_hour']
+
     return merged_df
 
 def main():
@@ -482,3 +510,4 @@ if __name__ == "__main__":
 
 # -----------------------------------------------------------------------------------------------------------------------------------------------
 # interactions - opposite direction information - additional variables and possible calculations like saturated flow rates, capacity, delay, etc.
+

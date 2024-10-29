@@ -29,3 +29,4 @@ output/
 *.tar
 *.tar.gz
 *.db
+*.pyc
