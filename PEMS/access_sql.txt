@@ -1,0 +1,15 @@
+SELECT qryDailyVolumesbyMonth.StationID, qryDailyVolumesbyMonth.MonthDate, Avg(qryDailyVolumesbyMonth.SumOfSumOfVolume) AS AvgOfSumOfSumOfVolume, Avg(qryDailyVolumesbyMonth.AvgOfAvgOfSpeed) AS AvgOfAvgOfAvgOfSpeed
+FROM qryDailyVolumesbyMonth
+GROUP BY qryDailyVolumesbyMonth.StationID, qryDailyVolumesbyMonth.MonthDate;
+
+SELECT qrySumofLaneswithDates.StationID, qrySumofLaneswithDates.MonthDate, qrySumofLaneswithDates.DayDate, Sum(qrySumofLaneswithDates.SumOfVolume) AS SumOfSumOfVolume, Avg(qrySumofLaneswithDates.AvgOfSpeed) AS AvgOfAvgOfSpeed, Weekday([qrySumofLaneswithDates].[ReadingDateTime],1) AS DOW
+FROM qrySumofLaneswithDates
+GROUP BY qrySumofLaneswithDates.StationID, qrySumofLaneswithDates.MonthDate, qrySumofLaneswithDates.DayDate, Weekday([qrySumofLaneswithDates].[ReadingDateTime],1);
+
+
+SELECT qrySumofLanes.StationID, qrySumofLanes.ReadingDateTime, qrySumofLanes.SumOfVolume, qrySumofLanes.AvgOfSpeed, Day([qrySumofLanes].[ReadingDateTime]) AS DayDate, Month([qrySumofLanes].[ReadingDateTime]) AS MonthDate, Hour([qrySumofLanes].[ReadingDateTime]) AS HourDate, Weekday([qrySumofLanes].[ReadingDateTime],1) AS DOW
+FROM qrySumofLanes;
+
+SELECT PeMS_RawData.StationID, PeMS_RawData.ReadingDateTime, Sum(PeMS_RawData.Volume) AS SumOfVolume, Avg(PeMS_RawData.Speed) AS AvgOfSpeed
+FROM PeMS_RawData
+GROUP BY PeMS_RawData.StationID, PeMS_RawData.ReadingDateTime;
