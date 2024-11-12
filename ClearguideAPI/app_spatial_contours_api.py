@@ -15,27 +15,27 @@ from plotly.subplots import make_subplots
 # Define the list of route IDs to query
 # State Street 6100 S to Williams = [9946, 9947]
 # State Street 11400 S to 9000 S = [13236, 13237]
-route_ids = [9946, 9947]
-route_name = 'State St (6100 S to Williams)'
+route_ids = [13236, 13237]
+route_name = 'Pattern 22 - State St (11400 S to 9000 S)'
 
 # User input to determine the direction of the routes
-NB = 9946
-SB = 9947
+NB = 13237
+SB = 13236
 EB = np.nan
 WB = np.nan
 
 # Read KML file (replace with your actual KML file path)
-kml_file_path = 'kml/State St (6100 S to Williams).kml'
+kml_file_path = 'kml/State Street (9000 South to 11400 South).kml'
 
 # Data download window (YYYY-MM-DD HH:MM:SS)
-start_datetime_str = "2024-08-1 00:00:00"
-end_datetime_str = "2024-10-13 23:59:59"
+start_datetime_str = "2024-09-1 00:00:00"
+end_datetime_str = "2024-10-31 23:59:59"
 
 # Define the comparisonwindow date thresholds (you should set these as input parameters)
-before_start = datetime(2024, 8, 1, 0, 0, 0)
-before_end = datetime(2024, 8, 21, 23, 59, 59)
-after_start = datetime(2024, 9, 19, 0, 0, 0)
-after_end = datetime(2024, 10, 2, 23, 59, 59)
+before_start = datetime(2024, 9, 1, 0, 0, 0)
+before_end = datetime(2024, 9, 30, 23, 59, 59)
+after_start = datetime(2024, 10, 16, 0, 0, 0)
+after_end = datetime(2024, 10, 31, 23, 59, 59)
 
 # Hardcoded username and password
 username = 'dbassett@avenueconsultants.com'
@@ -105,7 +105,7 @@ ROUTE_ID_TYPE = 'customer_route_number'
 START_TIMESTAMP = int(start_datetime.replace(tzinfo=timezone.utc).timestamp())
 END_TIMESTAMP = int(end_datetime.replace(tzinfo=timezone.utc).timestamp())
 METRIC = 'avg_speed'
-DOWS = 'mon,tue,wed,thu'
+DOWS = 'sat' #'mon,tue,wed,thu'
 GRANULARITY = 'hour'
 INCLUDE_HOLIDAYS = 'false'
 
@@ -171,8 +171,12 @@ df['dow'] = df['timestamp'].dt.dayofweek
 df['binned_distance'] = df['distance'].apply(bin_distance)
 
 # filter out fridays and saturdays and sundays
+df = df[df['dow'] != 0]
+df = df[df['dow'] != 1]
+df = df[df['dow'] != 2]
+df = df[df['dow'] != 3]
 df = df[df['dow'] != 4]
-df = df[df['dow'] != 5]
+# df = df[df['dow'] != 5]
 df = df[df['dow'] != 6]
 
 # Filter data for before and after windows
@@ -209,10 +213,10 @@ print(result_df)
 intersections = read_kml_intersections(kml_file_path)
 
 # Create a dictionary to map route_id to direction
-route_direction = {NB: 'Northbound', SB: 'Southbound'}
+route_direction = {NB: 'Northbound', SB: 'Southbound', EB: 'Eastbound', WB: 'Westbound'}
 
 # Prepare data for heatmap
-for route_id in [NB, SB]:
+for route_id in [NB, SB, EB, WB]:
     route_data = result_df[result_df['route_id'] == route_id]
     direction = route_direction[route_id]
     
@@ -245,7 +249,7 @@ for route_id in [NB, SB]:
         xaxis_title="Hour of Day",
         yaxis_title="Distance (miles)",
         height=1000,  # Adjust the height as needed
-        width=800,    # Adjust the width as needed
+        width=2000,    # Adjust the width as needed
     )
 
     # Customize y-axis ticks and labels
@@ -263,3 +267,8 @@ for route_id in [NB, SB]:
     fig.write_image(f'heatmap_{route_name}_{route_direction[route_id]}.png', scale=2)
 
 print("Plotly heatmaps have been generated and saved.")
+
+#-------------------------------------------------------------------------
+# Calculate the average speed between intersections for each time period and write to the excel file
+
+
