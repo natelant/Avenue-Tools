@@ -44,17 +44,17 @@ the_df['location_identifier'] = the_df['location_identifier'].astype(int)
 # Lower State St (11400 S to 9000 S) = [7174, 7643, 7175, 7640, 7176, 7352, 7177, 7178, 7179, 7353, 7351]
 # SR 209 (9000 S) = [7522, 7521, 7386, 7423, 7422, 7421, 7067]
 # SR 48 (7800 S) = [7066, 7354, 7012, 7011, 7010, 7116]
-signals = [7174, 7643, 7175, 7640, 7176, 7352, 7177, 7178, 7179, 7353, 7351]
-route_name = 'State St (11400 S to 9000 S)'
-output_file = f'{route_name}_filtered_data_{datetime.now().strftime("%Y-%m-%d_%H-%M-%S")}.xlsx'
+signals = [7147, 7474, 7148, 7642, 7149, 7150, 7073, 7152, 7153, 7154, 7641, 7155, 7156, 7157, 7158, 7159, 7657, 7160, 7401, 7161, 7162]
+route_name = 'State St (6100 S to Williams)'
+output_file = f'AoG_{route_name}_{datetime.now().strftime("%Y-%m-%d_%H-%M-%S")}.xlsx'
 
 # Create a dictionary mapping signal IDs to their order
 signal_order = {signal: index for index, signal in enumerate(signals)}
 
 # Define time windows
-window1_start = datetime(2024, 10, 10, 0, 0)
-window1_end = datetime(2024, 10, 11, 23, 59)
-window2_start = datetime(2024, 10, 12, 0, 0)
+window1_start = datetime(2024, 8, 1, 0, 0)
+window1_end = datetime(2024, 9, 11, 23, 59)
+window2_start = datetime(2024, 10, 18, 0, 0)
 window2_end = datetime(2024, 10, 28, 23, 59)
 
 # Function to truncate milliseconds

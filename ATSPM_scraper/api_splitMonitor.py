@@ -96,10 +96,13 @@ def process_split_monitor_data(data):
     
     # Convert timestamp columns to datetime
     if not plans_df.empty:
+        plans_df['start'] = plans_df['start'].str.split('.').str[0]  # Remove milliseconds
+        plans_df['end'] = plans_df['end'].str.split('.').str[0]      # Remove milliseconds
         plans_df['start'] = pd.to_datetime(plans_df['start'])
         plans_df['end'] = pd.to_datetime(plans_df['end'])
     
     if not splits_df.empty:
+        splits_df['timestamp'] = splits_df['timestamp'].str.split('.').str[0]  # Remove milliseconds
         splits_df['timestamp'] = pd.to_datetime(splits_df['timestamp'])
     
     return plans_df, splits_df
@@ -156,27 +159,43 @@ def save_to_database(plans_df, splits_df):
     conn.close()
 
 def main():
-    # Example usage
-    location_id = "7178"
-    start_date = "2024-10-28T00:00:00"
-    end_date = "2024-10-29T00:00:00"
+    # Read location IDs from signals.csv
+    signals_df = pd.read_csv('data/signals.csv')
     
     # Create database and tables
     create_database()
     
-    # Fetch data
-    data = fetch_split_monitor_data(location_id, start_date, end_date)
+    # Define date range
+    start = datetime(2024, 10, 29)  # Starting from January 1, 2024
+    end = datetime(2024, 11, 10)    # Until January 8, 2024 (one week)
+    current_date = start
     
-    if data:
-        # Process data
-        plans_df, splits_df = process_split_monitor_data(data)
+    while current_date < end:
+        # Format dates for API payload
+        start_date = current_date.strftime('%Y-%m-%dT00:00:00')
+        end_date = (current_date + timedelta(days=1)).strftime('%Y-%m-%dT00:00:00')
         
-        # Save to database
-        save_to_database(plans_df, splits_df)
+        print(f"\nProcessing date: {start_date[:10]}")  # Print just the date part for clarity
         
-        print("Data has been saved to the database.")
-    else:
-        print("Failed to fetch data.")
+        # Loop through each location ID
+        for location_id in signals_df['Signal_ID']:
+            print(f"  Location ID: {location_id}", end='')
+            
+            # Fetch data
+            data = fetch_split_monitor_data(str(location_id), start_date, end_date)
+            
+            if data:
+                # Process data
+                plans_df, splits_df = process_split_monitor_data(data)
+                
+                # Save to database
+                save_to_database(plans_df, splits_df)
+                print(" ✓")  # Checkmark for success
+            else:
+                print(" ✗")  # X mark for failure
+        
+        # Move to next day
+        current_date += timedelta(days=1)
 
 if __name__ == "__main__":
     main()
