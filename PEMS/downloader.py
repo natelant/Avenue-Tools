@@ -110,31 +110,71 @@ class PeMSCollector:
             'gn': self.config.granularity
         }
 
-    def collect_data(self, station: int, start_date: date, end_date: date):
-        """Collect data for a specific station and date range."""
+    def collect_data(self, station: int, start_date: date, end_date: date) -> Optional[pd.DataFrame]:
+        """Collect data for a specific station and date range and return as DataFrame."""
         try:
+            # Convert dates to Unix timestamps for the API request
             start_sec = int(datetime.combine(start_date, datetime.min.time()).timestamp())
             end_sec = int(datetime.combine(end_date, datetime.max.time()).timestamp())
             
+            # Create parameters for the API request
             params = self._create_url_params(start_date, station, start_sec, end_sec)
-            filename = self._create_filename(start_date, end_date, station)
             
-            response = self.session.get(self.BASE_URL, params=params, stream=True)
-            response.raise_for_status()
+            # Make the API request
+            response = self.session.get(self.BASE_URL, params=params)
+            response.raise_for_status()  # Raises an HTTPError for bad responses (4xx, 5xx)
             
-            with open(filename, 'wb') as f:
-                for chunk in response.iter_content(chunk_size=8192):
-                    f.write(chunk)
-                    
-            logging.info(f"Successfully downloaded data to {filename}")
+            # Read Excel data from the response content
+            # BytesIO is needed because response.content is in bytes format
+            from io import BytesIO
+            df = pd.read_excel(BytesIO(response.content), engine='openpyxl')
+
+            # Write the response to a csv file
+            df.to_csv(f"{self.config.directory_name}/raw_data_{station}.csv", index=False)
+            
+            
+            all_data = []
+            
+            # Find available lanes by checking column names
+            # Some stations might not have all lanes, so we need to check which ones exist
+            available_lanes = []
+            for lane in range(1, 7):  # Check lanes 1-6
+                flow_col = f'{station} Lane {lane} Flow'
+                speed_col = f'{station} Lane {lane} Speed - Used in Calculations'
+                # Only include lanes that have both flow and speed data
+                if flow_col in df.columns and speed_col in df.columns:
+                    available_lanes.append(lane)
+            
+            # If no valid lanes found, log warning and skip this station
+            if not available_lanes:
+                logging.warning(f"No valid lanes found for station {station}")
+                return None
+            
+            # Process each available lane
+            for lane in available_lanes:
+                # Create a standardized DataFrame for each lane
+                # This makes it easier to combine data from multiple stations later
+                lane_data = pd.DataFrame({
+                    'StationID': station,
+                    'ReadingDateTime': df['Sample Time'],
+                    'Lane': lane,
+                    'Volume': df[f'{station} Lane {lane} Flow'],
+                    'Speed': df[f'{station} Lane {lane} Speed - Used in Calculations']
+                })
+                all_data.append(lane_data)
+            
+            # Combine all lanes into a single DataFrame
+            return pd.concat(all_data, ignore_index=True)
             
         except Exception as e:
+            # Log any errors that occur during data collection
             logging.error(f"Failed to collect data for station {station}: {e}")
-            raise
+            return None
 
-    def run(self, stations: List[int]):
-        """Run the data collection process for all stations."""
+    def run(self, stations: List[int]) -> pd.DataFrame:
+        """Run the data collection process for all stations and return combined DataFrame."""
         increment = self._get_increment()
+        all_data = []
         
         for station in stations:
             current_date = self.config.start_date
@@ -143,8 +183,16 @@ class PeMSCollector:
                     current_date + timedelta(days=increment - 1),
                     self.config.end_date
                 )
-                self.collect_data(station, current_date, end_date)
+                df = self.collect_data(station, current_date, end_date)
+                if df is not None:
+                    all_data.append(df)
                 current_date += timedelta(days=increment)
+        
+        # Combine all data and sort by datetime
+        if all_data:
+            combined_df = pd.concat(all_data, ignore_index=True)
+            return combined_df.sort_values('ReadingDateTime')
+        return pd.DataFrame()
 
 def main():
     """Main entry point for the script."""
@@ -154,8 +202,14 @@ def main():
         config = ConfigSettings.from_csv("old/PeMS_config.csv")
         stations = PeMSCollector.read_stations("old/PeMS_Stations.csv")
         
+        # Collect and process data
         collector = PeMSCollector(config)
-        collector.run(stations)
+        raw_data = collector.run(stations)
+        
+        # Save processed data
+        output_file = Path(config.directory_name) / "processed_data.csv"
+        raw_data.to_csv(output_file, index=False)
+        logging.info(f"Processed data saved to {output_file}")
         
     except Exception as e:
         logging.error(f"Script failed: {e}")

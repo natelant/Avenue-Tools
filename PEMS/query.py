@@ -59,19 +59,19 @@ def process_traffic_data(raw_data_df):
     return query1_df, query2_df, query3_df, query4_df
 
 
-def monthly_figure(MonthlyAve):
-    # Determine pair of stations with the highest volumes
-    # problem: the stations are not paired together...
+# def monthly_figure(MonthlyAve):
+#     # Determine pair of stations with the highest volumes
+#     # problem: the stations are not paired together...
 
 
-    return fig, table
+#     return fig, table
 
 
-def daily_figure(SumofLaneswithDates):
+# def daily_figure(SumofLaneswithDates):
 
 
 
-    return fig, schedule
+#     return fig, schedule
 
 
 # Example usage:
