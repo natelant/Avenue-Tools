@@ -7,6 +7,9 @@ import requests
 from pathlib import Path
 import logging
 from typing import List, Optional
+from concurrent.futures import ThreadPoolExecutor, as_completed
+import json
+from tqdm import tqdm
 
 @dataclass
 class ConfigSettings:
@@ -171,24 +174,115 @@ class PeMSCollector:
             logging.error(f"Failed to collect data for station {station}: {e}")
             return None
 
-    def run(self, stations: List[int]) -> pd.DataFrame:
-        """Run the data collection process for all stations and return combined DataFrame."""
-        increment = self._get_increment()
+    def _get_date_chunks(self, start_date: date, end_date: date, chunk_size: int) -> List[tuple]:
+        """Break the date range into chunks for parallel processing.
+        
+        Args:
+            start_date: Start date for data collection
+            end_date: End date for data collection
+            chunk_size: Number of days per chunk
+            
+        Returns:
+            List of (chunk_start_date, chunk_end_date) tuples
+        """
+        chunks = []
+        current_date = start_date
+        
+        while current_date <= end_date:
+            chunk_end = min(
+                current_date + timedelta(days=chunk_size - 1),
+                end_date
+            )
+            chunks.append((current_date, chunk_end))
+            current_date = chunk_end + timedelta(days=1)
+            
+        return chunks
+
+    def _save_progress(self, station: int, completed_chunks: List[tuple]):
+        """Save progress to a JSON file for resume capability."""
+        progress_file = Path(self.config.directory_name) / f"progress_{station}.json"
+        with open(progress_file, 'w') as f:
+            json.dump({
+                'station': station,
+                'completed_chunks': [(c[0].isoformat(), c[1].isoformat()) for c in completed_chunks]
+            }, f)
+
+    def _load_progress(self, station: int) -> List[tuple]:
+        """Load previously completed chunks from progress file."""
+        progress_file = Path(self.config.directory_name) / f"progress_{station}.json"
+        if progress_file.exists():
+            with open(progress_file) as f:
+                data = json.load(f)
+                return [(date.fromisoformat(c[0]), date.fromisoformat(c[1])) 
+                        for c in data['completed_chunks']]
+        return []
+
+    def run(self, stations: List[int], max_workers: int = 3) -> pd.DataFrame:
+        """Run the data collection process using parallel processing.
+        
+        Args:
+            stations: List of station IDs to collect
+            max_workers: Maximum number of parallel threads (default: 3)
+        
+        Returns:
+            Combined DataFrame of all collected data
+        """
         all_data = []
+        chunk_size = self._get_increment()
         
+        # Process each station
         for station in stations:
-            current_date = self.config.start_date
-            while current_date <= self.config.end_date:
-                end_date = min(
-                    current_date + timedelta(days=increment - 1),
-                    self.config.end_date
-                )
-                df = self.collect_data(station, current_date, end_date)
-                if df is not None:
-                    all_data.append(df)
-                current_date += timedelta(days=increment)
+            logging.info(f"Processing station {station}")
+            
+            # Load any previously completed chunks
+            completed_chunks = self._load_progress(station)
+            
+            # Get all chunks for the date range
+            chunks = self._get_date_chunks(self.config.start_date, self.config.end_date, chunk_size)
+            
+            # Filter out completed chunks
+            chunks = [c for c in chunks if c not in completed_chunks]
+            
+            if not chunks:
+                logging.info(f"Station {station} already completed")
+                continue
+            
+            station_data = []
+            
+            # Process chunks in parallel
+            with ThreadPoolExecutor(max_workers=max_workers) as executor:
+                # Create a progress bar
+                with tqdm(total=len(chunks), desc=f"Station {station}") as pbar:
+                    # Submit all chunks for processing
+                    future_to_chunk = {
+                        executor.submit(self.collect_data, station, chunk[0], chunk[1]): chunk 
+                        for chunk in chunks
+                    }
+                    
+                    # Process completed futures as they finish
+                    for future in as_completed(future_to_chunk):
+                        chunk = future_to_chunk[future]
+                        try:
+                            data = future.result()
+                            if data is not None:
+                                station_data.append(data)
+                                completed_chunks.append(chunk)
+                                self._save_progress(station, completed_chunks)
+                        except Exception as e:
+                            logging.error(f"Failed to process chunk {chunk}: {e}")
+                        pbar.update(1)
+            
+            # Combine all data for this station
+            if station_data:
+                station_df = pd.concat(station_data, ignore_index=True)
+                all_data.append(station_df)
+                
+                # Save intermediate results
+                station_file = Path(self.config.directory_name) / f"station_{station}_data.csv"
+                station_df.to_csv(station_file, index=False)
+                logging.info(f"Saved data for station {station} to {station_file}")
         
-        # Combine all data and sort by datetime
+        # Combine all station data
         if all_data:
             combined_df = pd.concat(all_data, ignore_index=True)
             return combined_df.sort_values('ReadingDateTime')
@@ -196,7 +290,10 @@ class PeMSCollector:
 
 def main():
     """Main entry point for the script."""
-    logging.basicConfig(level=logging.INFO)
+    logging.basicConfig(
+        level=logging.INFO,
+        format='%(asctime)s - %(levelname)s - %(message)s'
+    )
     
     try:
         config = ConfigSettings.from_csv("old/PeMS_config.csv")
@@ -204,9 +301,9 @@ def main():
         
         # Collect and process data
         collector = PeMSCollector(config)
-        raw_data = collector.run(stations)
+        raw_data = collector.run(stations, max_workers=3)  # Adjust max_workers based on your system
         
-        # Save processed data
+        # Save final processed data
         output_file = Path(config.directory_name) / "processed_data.csv"
         raw_data.to_csv(output_file, index=False)
         logging.info(f"Processed data saved to {output_file}")

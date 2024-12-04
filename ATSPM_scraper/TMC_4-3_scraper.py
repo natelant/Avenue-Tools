@@ -148,12 +148,12 @@ async def main():
     # lower state st = ['7174', '7643', '7175', '7640', '7176', '7352', '7177', '7178', '7179', '7353', '7351'] 
     # SR 209 (9000 S) = ['7522', '7521', '7386', '7423', '7422', '7421', '7067']
     # SR 48 (7800 S) = ['7066', '7354', '7012', '7011', '7010', '7116']
-    intersection_ids = ['7174', '7643', '7175', '7640', '7176', '7352', '7177', '7178', '7179', '7353', '7351', '7522', '7521', '7386', '7423', '7422', '7421', '7067', '7066', '7354', '7012', '7011', '7010', '7116'] 
-    start_date = datetime(2024, 1, 1)
-    end_date = datetime(2024, 10, 15)
+    intersection_ids = ['8213'] 
+    start_date = datetime(2022, 12, 3)
+    end_date = datetime(2023, 12, 31)
     current_date = start_date
 
-    conn = sqlite3.connect('data/StateSt_TMC.db')
+    conn = sqlite3.connect('data/CedarCityMOT_8213_TMC.db')
     cursor = conn.cursor()
     cursor.execute('''CREATE TABLE IF NOT EXISTS tmc_data_detailed
                       (id INTEGER PRIMARY KEY AUTOINCREMENT,
