@@ -214,7 +214,7 @@ if __name__ == "__main__":
         print("Please check the path and try again.")
         exit(1)
 
-    output_file='error_summary.xlsx'
+    output_file='error_summary_'+Path(base_folder).name+'.xlsx'
 
     
 
