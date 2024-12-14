@@ -1,7 +1,7 @@
 import datetime
 import psycopg2
 from psycopg2 import extras
-from apiexample00 import ClearGuideApiHandler
+from examples.apiexample00 import ClearGuideApiHandler
 import sqlite3
 
 
